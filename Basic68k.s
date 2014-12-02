@@ -87,7 +87,7 @@ nobrk           EQU 0           ; null response to INPUT causes a break
 ; text can have either CRLF (Windows) or LF (Unix) line endings.
 
 PARSE_FILE:
-                lea     parse_file_buffer,A5 ; buffer space to temporarily store the current line (we need to terminate it with a NULL at the end)
+                lea     Ibuffs(A3),A5   ; buffer space to temporarily store the current line (we need to terminate it with a NULL at the end)
                 movea.l A5,A1           ; copy line buffer pointer to a1
 
 PARSE_FILE_loop:
@@ -97,7 +97,7 @@ PARSE_FILE_loop:
                 beq.s   PARSE_FILE_loop ; if yes, skip it (whatever happens we'll either wait for a LF character for EOL)
                 cmp.b   #10,D0          ; LF?
                 beq.s   PARSE_FILE_do_parse ; yep, so we're done. go parse the line
-                move.b  (A6)+,(A1)+     ; if we got here, then we have a valid character - copy it to the line buffer
+                move.b  D0,(A1)+        ; if we got here, then we have a valid character - copy it to the line buffer
                 bra.s   PARSE_FILE_loop ; and loop back
 
 PARSE_FILE_do_parse_fix:
@@ -127,14 +127,16 @@ parse_file_buffer:
 ; output character to the console from register d0.b
 
 VEC_OUT:
-                movem.l D0-D1,-(SP)     ; save d0, d1
-                move.b  D0,D1           ; copy character
-                moveq   #6,D0           ; character out
-                trap    #15             ; do I/O function
+                movem.l D0-A6,-(SP)     ; save d0, d1
+                move.b  D0,VEC_OUT_char
+                pea     VEC_OUT_char
+                move.w  #9,-(SP)
+                trap    #1
+                addq.l  #6,SP
 
-                movem.l (SP)+,D0-D1     ; restore d0, d1
+                movem.l (SP)+,D0-A6     ; restore d0, d1
                 rts
-
+VEC_OUT_char:   DC.W 0
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -744,6 +746,7 @@ LAB_1274:
                 lea     LAB_RMSG(PC),A0 ; point to "Ready" message
                 bsr     LAB_18C3        ; go do print string
 
+
 ; wait for Basic command - no "Ready"
 
 LAB_127D:
@@ -751,6 +754,12 @@ LAB_127D:
                 move.l  D1,Clinel(A3)   ; set current line #
                 move.b  D1,Breakf(A3)   ; set break flag
                 lea     Ibuffs(A3),A5   ; set basic execute pointer ready for new line
+
+qq:
+                lea     listing,A6
+                lea     Ibuffs(A3),A0
+                bsr     PARSE_FILE
+
 LAB_127E:
                 bsr     LAB_1357        ; call for BASIC input
                 bsr     LAB_GBYT        ; scan memory
@@ -9349,7 +9358,7 @@ Lvarpl:         RS.L 1          ; variable pointer for LET and FOR/NEXT
 des_sk_e:       RS.L 6          ; descriptor stack end address
 des_sk:         RS.W 1          ; descriptor stack start address
 ; use a4 for the descriptor pointer
-Ibuffs:         RS.L 40
+Ibuffs:         RS.L $40
 ;               rept $40
 ;               dc.l    0
 ;               endr
@@ -9445,6 +9454,8 @@ prg_strt        EQU ^^RSCOUNT
 ram_addr        EQU $080000     ; RAM start address
 ram_size        EQU $080000     ; RAM size
 
+listing:        IBYTES 'TEST.BAS'
+                EVEN
 
 
 RAM:            DS.L 8192
