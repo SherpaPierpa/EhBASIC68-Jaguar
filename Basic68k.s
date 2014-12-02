@@ -1,22 +1,22 @@
-; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
-;                                                                                                               *
-;       Enhanced BASIC for the Motorola MC680xx                                                 *
-;                                                                                                               *
-;       This is the generic version with I/O and LOAD/SAVE example code for the         *
-;       EASy68k editor/simulator. 2002-2012.                                                    *
-;                                                                                                               *
-; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
-;                                                                                                               *
-;       Copyright(C) 2002-12 by Lee Davison. This program may be freely distributed     *
-;       for personal use only. All commercial rights are reserved.                              *
-;                                                                                                               *
-;       More 68000 and other projects can be found on my website at ..                  *
-;                                                                                                               *
-;        http://mycorner.no-ip.org/index.html                                                   *
-;                                                                                                               *
-;       mail : leeedavison@googlemail.com                                                               *
-;                                                                                                               *
-; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ;
+;                                                                                   ;
+;       Enhanced BASIC for the Motorola MC680xx                                     ;
+;                                                                                   ;
+;       This is the generic version with I/O and LOAD/SAVE example code for the     ;
+;       EASy68k editor/simulator. 2002-2012.                                        ;
+;                                                                                   ;
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ;
+;                                                                                   ;
+;       Copyright(C) 2002-12 by Lee Davison. This program may be freely distributed ;
+;       for personal use only. All commercial rights are reserved.                  ;
+;                                                                                   ;
+;       More 68000 and other projects can be found on my website at ..              ;
+;                                                                                   ;
+;        http://mycorner.no-ip.org/index.html                                       ;
+;                                                                                   ;
+;       mail : leeedavison@googlemail.com                                           ;
+;                                                                                   ;
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ;
 
 ; Ver 3.52
 
@@ -36,10 +36,17 @@
 
                 OPT D+
 
+;                pea     cls(PC)
+;                move.w  #9,-(SP)
+;                trap    #1
+;                addq.l  #6,SP
+
                 lea     RAM,A0
                 move.l  #RAM_SIZE,D0
                 bra     LAB_COLD
 
+;cls:            DC.B 27,'E',0
+;                EVEN
 
 
 novar           EQU 0           ; non existant variables cause errors
@@ -105,19 +112,28 @@ PARSE_FILE_do_parse_fix:
 ; last line has code and isn't terminated by return. since we already parsed the null, decrease input pointer so we'll reparse it next iteration
 PARSE_FILE_do_parse:
                 clr.b   (A1)            ; zero the last byte for the parser
+zz:
+;                movea.l Smeml(A3),A0    ; start of program memory
+;                lea     $3F8000,A0
+                movea.l A5,A0
                 bsr     LAB_1295        ; a0=output buffer, a5=input buffer
 ; TODO: checks to see if a syntax error occurs or anything.
                 bra.s   PARSE_FILE      ; and go to next line
 
 PARSE_FILE_out:
-                cmpa.l  #parse_file_buffer,A5 ; one last check before we go: does the file buffer contain anything? (i.e. last line might not be terminated by a return)
+
+                lea     Ibuffs(A3),A0   ; buffer space to temporarily store the current line (we need to terminate it with a NULL at the end)
+                cmpa.l  A0,A5           ; one last check before we go: does the file buffer contain anything? (i.e. last line might not be terminated by a return)
                 bne.s   PARSE_FILE_do_parse_fix ; if it does, parse that line too
+
+                bra     LAB_RUN
+
                 rts                     ; otherwise take the highway
 
-parse_file_buffer:
-                REPT 64
-                DC.L 0
-                ENDR
+;parse_file_buffer:
+;                REPT 64
+;                DC.L 0
+;                ENDR
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -144,17 +160,27 @@ VEC_OUT_char:   DC.W 0
 ; else return Cb=0 if there's no character available
 
 VEC_IN:
-                move.l  D1,-(SP)        ; save d1
-                moveq   #7,D0           ; get the status
-                trap    #15             ; do I/O function
+;                move.l  D1,-(SP)        ; save d1
+;                moveq   #7,D0           ; get the status
+;                trap    #15             ; do I/O function
 
-                move.b  D1,D0           ; copy the returned status
-                bne.s   RETCHR          ; if a character is waiting go get it
+;                move.b  D1,D0           ; copy the returned status
+;                bne.s   RETCHR          ; if a character is waiting go get it
 
-                move.l  (SP)+,D1        ; else restore d1
-                tst.b   D0              ; set the z flag
-;       ANDI.b  #$FE,CCR                        ; clear the carry, flag we got no byte
-;                                                       ; done by the TST.b
+;                move.l  (SP)+,D1        ; else restore d1
+;                tst.b   D0              ; set the z flag
+;;       ANDI.b  #$FE,CCR                        ; clear the carry, flag we got no byte
+;;                                                       ; done by the TST.b
+                movem.l D1/A0-A1,-(SP)
+                move.w  #2,-(SP)
+                move.w  #2,-(SP)
+                trap    #13
+                addq.l  #4,SP
+                movem.l (SP)+,D1/A0-A1
+                tst.b   D0
+                beq.s   VEC_IN_EXIT
+                ori     #1,CCR
+VEC_IN_EXIT:
                 rts
 
 RETCHR:
@@ -757,7 +783,6 @@ LAB_127D:
 
 qq:
                 lea     listing,A6
-                lea     Ibuffs(A3),A0
                 bsr     PARSE_FILE
 
 LAB_127E:
@@ -799,6 +824,7 @@ LAB_1295:
                 bcs.s   LAB_12E6        ; branch if not found
 
 ; aroooogah! line # already exists! delete it
+
                 movea.l (A0),A1         ; get start of block (next line pointer)
                 move.l  Sfncl(A3),D0    ; get end of block (start of functions)
                 sub.l   A1,D0           ; subtract start of block ( = bytes to move)
@@ -1215,9 +1241,9 @@ LAB_1480:
 LAB_1491:
                 lea     des_sk(A3),A4   ; reset descriptor stack pointer
 
-                move.l  (SP)+,D0        ; pull return address
+                movem.l (SP)+,D0-D1     ; pull 2 return addresses (at most)
                 lea     ram_base(A3),SP ; set stack to RAM start + 1k, flush stack
-                move.l  D0,-(SP)        ; restore return address
+                movem.l D0-D1,-(SP)     ; restore 2 return address
 
                 moveq   #0,D0           ; clear longword
                 move.l  D0,Cpntrl(A3)   ; clear continue pointer
@@ -1280,6 +1306,7 @@ LAB_14D4:
                 move.b  #$00,Oquote(A3) ; clear open quote flag
                 bsr     LAB_CRLF        ; print CR/LF
                 move.l  (A0)+,D0        ; get next line pointer
+
                 beq.s   RTS_005         ; if null all done so exit
 
                 movea.l D0,A1           ; copy next line pointer
@@ -1456,6 +1483,7 @@ LAB_1602:
 ; key press is detected.
 
 LAB_1629:
+                rts
                 jmp     V_CTLC(A3)      ; ctrl c check vector
 
 ; if there was a key press it gets back here .....
@@ -2283,6 +2311,7 @@ LAB_18F0:
                 bne.s   LAB_18F7        ; branch if not at end of line
 
                 move.l  D0,-(SP)        ; save d0
+
                 bsr     LAB_CRLF        ; else print CR/LF
                 move.l  (SP)+,D0        ; restore d0
 LAB_18F7:
