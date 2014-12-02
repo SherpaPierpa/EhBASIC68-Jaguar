@@ -9180,199 +9180,43 @@ LAB_SMSG:
 	dc.b	' Bytes free',$0D,$0A,$0A
 	dc.b	'Enhanced 68k BASIC Version 3.52',$0D,$0A,$00
 
+;	OFFSET	0			; start of RAM
 
-; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
-; EhBASIC keywords quick reference list								*
-; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
-
-; glossary
-
-;		<.>		  required
-;		{.|.}		  one of required
-;		[.]		  optional
-;		...		  may repeat as last
-
-;		any		= anything
-;		num		= number
-;		state		= statement
-;		n		= positive integer
-;		str		= string
-;		var		= variable
-;		nvar		= numeric variable
-;		svar		= string variable
-;		expr		= expression
-;		nexpr		= numeric expression
-;		sexpr		= string expression
-
-; statement separator
-
-; :		. [<state>] : [<state>]						; done
-
-; number bases
-
-; %		. %<binary num>							; done
-; $		. $<hex num>							; done
-
-; commands
-
-; END		. END									; done
-; FOR		. FOR <nvar>=<nexpr> TO <nexpr> [STEP <nexpr>]		; done
-; NEXT	. NEXT [<nvar>[,<nvar>]...]					; done
-; DATA	. DATA [{num|["]str["]}[,{num|["]str["]}]...]		; done
-; INPUT	. INPUT [<">str<">;] <var>[,<var>[,<var>]...]		; done
-; DIM		. DIM <var>(<nexpr>[,<nexpr>[,<nexpr>]])			; done
-; READ	. READ <var>[,<var>[,<var>]...]				; done
-; LET		. [LET] <var>=<expr>						; done
-; DEC		. DEC <nvar>[,<nvar>[,<nvar>]...]				; done
-; GOTO	. GOTO <n>								; done
-; RUN		. RUN [<n>]								; done
-; IF		. IF <expr>{GOTO<n>|THEN<{n|comm}>}[ELSE <{n|comm}>]	; done
-; RESTORE	. RESTORE [<n>]							; done
-; GOSUB	. GOSUB <n>								; done
-; RETURN	. RETURN								; done
-; REM		. REM [<any>]							; done
-; STOP	. STOP								; done
-; ON		. ON <nexpr>{GOTO|GOSUB}<n>[,<n>[,<n>]...]		; done
-; NULL	. NULL <nexpr>							; done
-; INC		. INC <nvar>[,<nvar>[,<nvar>]...]				; done
-; WAIT	. WAIT <nexpr>,<nexpr>[,<nexpr>]				; done
-; LOAD	. LOAD [<sexpr>]							; done for sim
-; SAVE	. SAVE [<sexpr>][,[<n>][-<n>]]				; done for sim
-; DEF		. DEF FN<var>(<var>)=<expr>					; done
-; POKE	. POKE <nexpr>,<nexpr>						; done
-; DOKE	. DOKE <nexpr>,<nexpr>						; done
-; LOKE	. LOKE <nexpr>,<nexpr>						; done
-; CALL	. CALL <nexpr>							; done
-; DO		. DO									; done
-; LOOP	. LOOP [{WHILE|UNTIL}<nexpr>]					; done
-; PRINT	. PRINT [{;|,}][<expr>][{;|,}[<expr>]...]			; done
-; CONT	. CONT								; done
-; LIST	. LIST [<n>][-<n>]						; done
-; CLEAR	. CLEAR								; done
-; NEW		. NEW									; done
-; WIDTH	. WIDTH [<n>][,<n>]						; done
-; GET		. GET <var>								; done
-; SWAP	. SWAP <var>,<var>						; done
-; BITSET	. BITSET <nexpr>,<nexpr>					; done
-; BITCLR	. BITCLR <nexpr>,<nexpr>					; done
-
-; sub commands (may not start a statement)
-
-; TAB		. TAB(<nexpr>)							; done
-; ELSE	. IF <expr>{GOTO<n>|THEN<{n|comm}>}[ELSE <{n|comm}>]	; done
-; TO		. FOR <nvar>=<nexpr> TO <nexpr> [STEP <nexpr>]		; done
-; FN		. FN <var>(<expr>)						; done
-; SPC		. SPC(<nexpr>)							; done
-; THEN	. IF <nexpr> {THEN <{n|comm}>|GOTO <n>}			; done
-; NOT		. NOT <nexpr>							; done
-; STEP	. FOR <nvar>=<nexpr> TO <nexpr> [STEP <nexpr>]		; done
-; UNTIL	. LOOP [{WHILE|UNTIL}<nexpr>]					; done
-; WHILE	. LOOP [{WHILE|UNTIL}<nexpr>]					; done
-
-; operators
-
-; +		. [expr] + <expr>							; done
-; -		. [nexpr] - <nexpr>						; done
-; ;		. <nexpr> ; <nexpr>						; done fast hardware
-; /		. <nexpr> / <nexpr>						; done fast hardware
-; ^		. <nexpr> ^ <nexpr>						; done
-; AND		. <nexpr> AND <nexpr>						; done
-; EOR		. <nexpr> EOR <nexpr>						; done
-; OR		. <nexpr> OR <nexpr>						; done
-; >>		. <nexpr> >> <nexpr>						; done
-; <<		. <nexpr> << <nexpr>						; done
-
-; compare functions
-
-; <		. <expr> < <expr>							; done
-; =		. <expr> = <expr>							; done
-; >		. <expr> > <expr>							; done
-
-; functions
-
-; SGN		. SGN(<nexpr>)							; done
-; INT		. INT(<nexpr>)							; done
-; ABS		. ABS(<nexpr>)							; done
-; USR		. USR(<expr>)							; done
-; FRE		. FRE(<expr>)							; done
-; POS		. POS(<expr>)							; done
-; SQR		. SQR(<nexpr>)							; done fast shift/sub
-; RND		. RND(<nexpr>)							; done 32 bit PRNG
-; LOG		. LOG(<nexpr>)							; done fast cordic
-; EXP		. EXP(<nexpr>)							; done fast cordic
-; COS		. COS(<nexpr>)							; done fast cordic
-; SIN		. SIN(<nexpr>)							; done fast cordic
-; TAN		. TAN(<nexpr>)							; done fast cordic
-; ATN		. ATN(<nexpr>)							; done fast cordic
-; PEEK	. PEEK(<nexpr>)							; done
-; DEEK	. DEEK(<nexpr>)							; done
-; LEEK	. LEEK(<nexpr>)							; done
-; LEN		. LEN(<sexpr>)							; done
-; STR$	. STR$(<nexpr>)							; done
-; VAL		. VAL(<sexpr>)							; done
-; ASC		. ASC(<sexpr>)							; done
-; UCASE$	. UCASE$(<sexpr>)							; done
-; LCASE$	. LCASE$(<sexpr>)							; done
-; CHR$	. CHR$(<nexpr>)							; done
-; HEX$	. HEX$(<nexpr>)							; done
-; BIN$	. BIN$(<nexpr>)							; done
-; BTST	. BTST(<nexpr>,<nexpr>)						; done
-; MAX		. MAX(<nexpr>[,<nexpr>[,<nexpr>]...])			; done
-; MIN		. MIN(<nexpr>[,<nexpr>[,<nexpr>]...])			; done
-; PI		. PI									; done
-; TWOPI	. TWOPI								; done
-; VARPTR	. VARPTR(<var>)							; done
-; SADD	. SADD(<svar>)							; done
-; LEFT$	. LEFT$(<sexpr>,<nexpr>)					; done
-; RIGHT$	. RIGHT$(<sexpr>,<nexpr>)					; done
-; MID$	. MID$(<sexpr>,<nexpr>[,<nexpr>])				; done
-; USING$	. USING$(<sexpr>,<nexpr>[,<nexpr>]...])			; done
-
-
-; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
-
-	;END	code_start
-
-; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
-
-	.bss
-
-
-;; This lot is in RAM
-
-	OFFSET	0			; start of RAM
-
-ram_strt:	ds.l	$100			; allow 1K for the stack, this should be plenty
+ram_strt:	
+				.rept $100
+				dc.l 0 
+				.endr
+;ds.l	$100			; allow 1K for the stack, this should be plenty
 						; for any BASIC program that doesn't do something
 						; silly, it could even be much less.
 ram_base:
-LAB_WARM:	ds.w	1			; BASIC warm start entry point
-Wrmjpv:	ds.l	1			; BASIC warm start jump vector
+LAB_WARM:	dc.w	0			; BASIC warm start entry point
+Wrmjpv:	dc.l	0			; BASIC warm start jump vector
 
-Usrjmp:	ds.w	1			; USR function JMP address
-Usrjpv:	ds.l	1			; USR function JMP vector
+Usrjmp:	dc.w	0			; USR function JMP address
+Usrjpv:	dc.l	0			; USR function JMP vector
 
 ;; system dependant i/o vectors
 ;; these are in RAM and are set at start-up
 
-V_INPT:	ds.w	1			; non halting scan input device entry point
-V_INPTv:	ds.l	1			; non halting scan input device jump vector
+V_INPT:	dc.w	0			; non halting scan input device entry point
+V_INPTv:	dc.l	0			; non halting scan input device jump vector
 
-V_OUTP:	ds.w	1			; send byte to output device entry point
-V_OUTPv:	ds.l	1			; send byte to output device jump vector
+V_OUTP:	dc.w	0			; send byte to output device entry point
+V_OUTPv:	dc.l	0			; send byte to output device jump vector
 
-V_LOAD:	ds.w	1			; load BASIC program entry point
-V_LOADv:	ds.l	1			; load BASIC program jump vector
+V_LOAD:	dc.w	0			; load BASIC program entry point
+V_LOADv:	dc.l	0			; load BASIC program jump vector
 
-V_SAVE:	ds.w	1			; save BASIC program entry point
-V_SAVEv:	ds.l	1			; save BASIC program jump vector
+V_SAVE:	dc.w	0			; save BASIC program entry point
+V_SAVEv:	dc.l	0			; save BASIC program jump vector
 
-V_CTLC:	ds.w	1			; save CTRL-C check entry point
-V_CTLCv:	ds.l	1			; save CTRL-C check jump vector
+V_CTLC:	dc.w	0			; save CTRL-C check entry point
+V_CTLCv:	dc.l	0			; save CTRL-C check jump vector
 
-Itemp:		ds.l	1			; temporary integer	(for GOTO etc)
+Itemp:		dc.l	0			; temporary integer	(for GOTO etc)
 
-Smeml:		ds.l	1			; start of memory		(start of program)
+Smeml:		dc.l	0			; start of memory		(start of program)
 
 ;; the program is stored as a series of lines each line having the following format
 ;*
@@ -9382,7 +9226,7 @@ Smeml:		ds.l	1			; start of memory		(start of program)
 ;*		dc.b	$00			; [EOL] marker, there will be a second $00 byte, if
 ;*						; needed, to pad the line to an even number of bytes
 
-Sfncl:		ds.l	1			; start of functions	(end of Program)
+Sfncl:		dc.l	0			; start of functions	(end of Program)
 
 ;; the functions are stored as function name, function execute pointer and function
 ;; variable name
@@ -9391,14 +9235,14 @@ Sfncl:		ds.l	1			; start of functions	(end of Program)
 ;*		ds.l	1			; execute pointer
 ;*		ds.l	1			; function variable
 
-Svarl:		ds.l	1			; start of variables	(end of functions)
+Svarl:		dc.l	0			; start of variables	(end of functions)
 
 ;; the variables are stored as variable name, variable value
 ;*
 ;*		ds.l	1			; name
 ;*		ds.l	1			; packed float or integer value
 
-Sstrl:		ds.l	1			; start of strings	(end of variables)
+Sstrl:		dc.l	0			; start of strings	(end of variables)
 
 ;; the strings are stored as string name, string pointer and string length
 ;*
@@ -9406,7 +9250,7 @@ Sstrl:		ds.l	1			; start of strings	(end of variables)
 ;*		ds.l	1			; string pointer
 ;*		ds.w	1			; string length
 
-Sarryl:	ds.l	1			; start of arrays		(end of strings)
+Sarryl:	dc.l	0			; start of arrays		(end of strings)
 
 ;; the arrays are stored as array name, array size, array dimensions count, array
 ;; dimensions upper bounds and array elements
@@ -9430,109 +9274,112 @@ Sarryl:	ds.l	1			; start of arrays		(end of strings)
 ;*
 ;; .. if string
 
-Earryl:	ds.l	1			; end of arrays		(start of free mem)
-Sstorl:	ds.l	1			; string storage		(moving down)
-Ememl:		ds.l	1			; end of memory		(upper bound of RAM)
-Sutill:	ds.l	1			; string utility ptr
-Clinel:	ds.l	1			; current line		(Basic line number)
-Blinel:	ds.l	1			; break line		(Basic line number)
+Earryl:	dc.l	0			; end of arrays		(start of free mem)
+Sstorl:	dc.l	0			; string storage		(moving down)
+Ememl:	dc.l	0			; end of memory		(upper bound of RAM)
+Sutill:	dc.l	0			; string utility ptr
+Clinel:	dc.l	0			; current line		(Basic line number)
+Blinel:	dc.l	0			; break line		(Basic line number)
 
-Cpntrl:	ds.l	1			; continue pointer
-Dlinel:	ds.l	1			; current DATA line
-Dptrl:		ds.l	1			; DATA pointer
-Rdptrl:	ds.l	1			; read pointer
-Varname:	ds.l	1			; current var name
-Cvaral:	ds.l	1			; current var address
-Lvarpl:	ds.l	1			; variable pointer for LET and FOR/NEXT
+Cpntrl:	dc.l	0			; continue pointer
+Dlinel:	dc.l	0			; current DATA line
+Dptrl:	dc.l	0			; DATA pointer
+Rdptrl:	dc.l	0		; read pointer
+Varname:	dc.l	0			; current var name
+Cvaral:	dc.l	0			; current var address
+Lvarpl:	dc.l	0			; variable pointer for LET and FOR/NEXT
 
-des_sk_e:	ds.l	6			; descriptor stack end address
+des_sk_e:	dc.l	0,0,0,0,0,0			; descriptor stack end address
 des_sk:					; descriptor stack start address
 						; use a4 for the descriptor pointer
-		ds.w	1			
-Ibuffs:	ds.l	$40			; start of input buffer
+		dc.w	10			
+Ibuffs:	.rept $40
+		dc.l	0
+		.endr
+ ; ds.l	$40			; start of input buffer
 Ibuffe:
 						; end of input buffer
 
-FAC1_m:	ds.l	1			; FAC1 mantissa1
-FAC1_e:	ds.w	1			; FAC1 exponent
+FAC1_m:	dc.l	0			; FAC1 mantissa1
+FAC1_e:	dc.w	0			; FAC1 exponent
 FAC1_s	EQU	FAC1_e+1		; FAC1 sign (b7)
-		ds.w	1			
+		dc.w	0			
 
-FAC2_m:	ds.l	1			; FAC2 mantissa1
-FAC2_e:	ds.l	1			; FAC2 exponent
+FAC2_m:	dc.l	0			; FAC2 mantissa1
+FAC2_e:	dc.l	0			; FAC2 exponent
 FAC2_s	EQU	FAC2_e+1		; FAC2 sign (b7)
 FAC_sc	EQU	FAC2_e+2		; FAC sign comparison, Acc#1 vs #2
 flag		EQU	FAC2_e+3		; flag byte for divide routine
 
-PRNlword:	ds.l	1			; PRNG seed long word
+PRNlword:	dc.l	0			; PRNG seed long word
 
-ut1_pl:	ds.l	1			; utility pointer 1
+ut1_pl:	dc.l	0			; utility pointer 1
 
-Asptl:		ds.l	1			; array size/pointer
-Astrtl:	ds.l	1			; array start pointer
+Asptl:		dc.l	0			; array size/pointer
+Astrtl:	dc.l	0			; array start pointer
 
 numexp	EQU	Astrtl		; string to float number exponent count
 expcnt	EQU	Astrtl+1		; string to float exponent count
 
 expneg	EQU	Astrtl+3		; string to float eval exponent -ve flag
 
-func_l:	ds.l	1			; function pointer
+func_l:	dc.l	0			; function pointer
 
 
 ;						; these two need to be a word aligned pair !
-Defdim:	ds.w	1			; default DIM flag
+Defdim:	dc.w	0			; default DIM flag
 cosout	EQU	Defdim		; flag which CORDIC output (re-use byte)
 Dtypef	EQU	Defdim+1		; data type flag, $80=string, $40=integer, $00=float
 
 
-Binss:		ds.l	4			; number to bin string start (32 chrs)
+Binss:		dc.l	0,0,0,0			; number to bin string start (32 chrs)
 
-Decss:		ds.l	1			; number to decimal string start (16 chrs)
-		ds.w	1			;*
-Usdss:		ds.w	1			; unsigned decimal string start (10 chrs)
+Decss:		dc.l	0			; number to decimal string start (16 chrs)
+		dc.w	0			;*
+Usdss:		dc.w	0			; unsigned decimal string start (10 chrs)
 
-Hexss:		ds.l	2			; number to hex string start (8 chrs)
+Hexss:		dc.l	0,0			; number to hex string start (8 chrs)
 
-BHsend:	ds.w	1			; bin/decimal/hex string end
+BHsend:	dc.w	0			; bin/decimal/hex string end
 
 
-prstk:		ds.b	1			; stacked function index
+prstk:		dc.b	0			; stacked function index
 
-tpower:	ds.b	1			; remember CORDIC power
+tpower:	dc.b	0			; remember CORDIC power
 
-Asrch:		ds.b	1			; scan-between-quotes flag, alt search character
+Asrch:		dc.b	0			; scan-between-quotes flag, alt search character
 
-Dimcnt:	ds.b	1			; # of dimensions
+Dimcnt:	dc.b	0			; # of dimensions
 
-Breakf:	ds.b	1			; break flag, $00=END else=break
-Oquote:	ds.b	1			; open quote flag (Flag: DATA; LIST; memory)
-Gclctd:	ds.b	1			; garbage collected flag
-Sufnxf:	ds.b	1			; subscript/FNX flag, 1xxx xxx = FN(0xxx xxx)
-Imode:		ds.b	1			; input mode flag, $00=INPUT, $98=READ
+Breakf:	dc.b	0			; break flag, $00=END else=break
+Oquote:	dc.b	0			; open quote flag (Flag: DATA; LIST; memory)
+Gclctd:	dc.b	0			; garbage collected flag
+Sufnxf:	dc.b	0			; subscript/FNX flag, 1xxx xxx = FN(0xxx xxx)
+Imode:		dc.b	0			; input mode flag, $00=INPUT, $98=READ
 
-Cflag:		ds.b	1			; comparison evaluation flag
+Cflag:		dc.b	0			; comparison evaluation flag
 
-TabSiz:	ds.b	1			; TAB step size
+TabSiz:	dc.b	0			; TAB step size
 
-comp_f:	ds.b	1			; compare function flag, bits 0,1 and 2 used
+comp_f:	dc.b	0			; compare function flag, bits 0,1 and 2 used
 		;				; bit 2 set if >
 		;				; bit 1 set if =
 		;				; bit 0 set if <
 
-Nullct:	ds.b	1			; nulls output after each line
-TPos:		ds.b	1			; BASIC terminal position byte
-TWidth:	ds.b	1			; BASIC terminal width byte
-Iclim:		ds.b	1			; input column limit
-ccflag:	ds.b	1			; CTRL-C check flag
-ccbyte:	ds.b	1			; CTRL-C last received byte
-ccnull:	ds.b	1			; CTRL-C last received byte 'life' timer
+Nullct:	dc.b	0			; nulls output after each line
+TPos:		dc.b	0			; BASIC terminal position byte
+TWidth:	dc.b	0			; BASIC terminal width byte
+Iclim:		dc.b	0			; input column limit
+ccflag:	dc.b	0			; CTRL-C check flag
+ccbyte:	dc.b	0			; CTRL-C last received byte
+ccnull:	dc.b	0			; CTRL-C last received byte 'life' timer
 
 ;; these variables for simulator load/save routines
 
-file_byte:	ds.b	1			; load/save data byte
-file_id:	ds.l	1			; load/save file ID
+file_byte:	dc.b	0			; load/save data byte
+file_id:	dc.l	0			; load/save file ID
 
-		ds.w	1			; dummy even value and zero pad byte
+		dc.w	0			; dummy even value and zero pad byte
 
 prg_strt:
 
@@ -9540,6 +9387,7 @@ prg_strt:
 
 ram_addr	EQU	$80000		; RAM start address
 ram_size	EQU	$80000		; RAM size
+
 
 
 
