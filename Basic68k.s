@@ -34,7 +34,213 @@
 ; option of not returning an error for a non existant variable. If this is the
 ; behaviour you want just change novar to some non zero value
 
-                OPT D+
+;                OPT D+
+;       OFFSET  0                       ; start of RAM
+;                RSRESET
+
+;ram_strt:       RS.L 256
+ram_strt        EQU 0
+;                               rept $100
+;                               dc.l 0
+;                               endr
+;ds.l   $100                    ; allow 1K for the stack, this should be plenty
+; for any BASIC program that doesn't do something
+; silly, it could even be much less.
+ram_base        equ ram_strt+1024
+LAB_WARM       equ ram_base ;RS.W 1          ; BASIC warm start entry point
+Wrmjpv         equ LAB_WARM+2 ;RS.L 1          ; BASIC warm start jump vector
+                
+Usrjmp         EQU Wrmjpv+4 ;RS.W 1          ; USR function JMP address
+Usrjpv         EQU Usrjmp+2 ;RS.L 1          ; USR function JMP vector
+
+;; system dependant i/o vectors
+;; these are in RAM and are set at start-up
+
+V_INPT         EQU Usrjpv+4 ;RS.W 1          ; non halting scan input device entry point
+V_INPTv        EQU V_INPT+2 ;RS.L 1          ; non halting scan input device jump vector
+
+V_OUTP         EQU V_INPTv+4 ;RS.W 1          ; send byte to output device entry point
+V_OUTPv        EQU V_OUTP+2 ;RS.L 1          ; send byte to output device jump vector
+
+V_LOAD         EQU V_OUTPv+4 ;RS.W 1          ; load BASIC program entry point
+V_LOADv        EQU V_LOAD+2 ;RS.L 1          ; load BASIC program jump vector
+
+V_SAVE         EQU V_LOADv+4 ;RS.W 1          ; save BASIC program entry point
+V_SAVEv        EQU V_SAVE+2 ;RS.L 1          ; save BASIC program jump vector
+
+V_CTLC         EQU V_SAVEv+4 ;RS.W 1          ; save CTRL-C check entry point
+V_CTLCv        EQU V_CTLC+2 ;RS.L 1          ; save CTRL-C check jump vector
+
+Itemp          EQU V_CTLCv+4 ;RS.L 1          ; temporary integer     (for GOTO etc)
+
+Smeml          EQU Itemp+4 ;RS.L 1          ; start of memory               (start of program)
+
+;; the program is stored as a series of lines each line having the following format
+;*
+;*              ds.l    1                       ; pointer to the next line or $00000000 if [EOT]
+;*              ds.l    1                       ; line number
+;*              ds.b    n                       ; program bytes
+;*              dc.b    $00                     ; [EOL] marker, there will be a second $00 byte, if
+;*                                              ; needed, to pad the line to an even number of bytes
+
+Sfncl          EQU Smeml+4 ;RS.L 1          ; start of functions    (end of Program)
+
+;; the functions are stored as function name, function execute pointer and function
+;; variable name
+;*
+;*              ds.l    1                       ; name
+;*              ds.l    1                       ; execute pointer
+;*              ds.l    1                       ; function variable
+
+Svarl          EQU Sfncl+4 ;RS.L 1          ; start of variables    (end of functions)
+
+;; the variables are stored as variable name, variable value
+;*
+;*              ds.l    1                       ; name
+;*              ds.l    1                       ; packed float or integer value
+
+Sstrl          EQU Svarl+4 ;RS.L 1          ; start of strings      (end of variables)
+
+;; the strings are stored as string name, string pointer and string length
+;*
+;*              ds.l    1                       ; name
+;*              ds.l    1                       ; string pointer
+;*              ds.w    1                       ; string length
+
+Sarryl         EQU Sstrl+4 ;RS.L 1          ; start of arrays               (end of strings)
+
+;; the arrays are stored as array name, array size, array dimensions count, array
+;; dimensions upper bounds and array elements
+;*
+;*              ds.l    1                       ; name
+;*              ds.l    1                       ; size including this header
+;*              ds.w    1                       ; dimensions count
+;*              ds.w    1                       ; 1st dimension upper bound
+;*              ds.w    1                       ; 2nd dimension upper bound
+;*              ...                             ; ...
+;*              ds.w    1                       ; nth dimension upper bound
+;*
+;; then (i1+1)*(i2+1)...*(in+1) of either ..
+;*
+;*              ds.l    1                       ; packed float or integer value
+;*
+;; .. if float or integer, or ..
+;*
+;*              ds.l    1                       ; string pointer
+;*              ds.w    1                       ; string length
+;*
+;; .. if string
+
+Earryl         EQU Sarryl+4 ;RS.L 1          ; end of arrays         (start of free mem)
+Sstorl         EQU Earryl+4 ;RS.L 1          ; string storage                (moving down)
+Ememl          EQU Sstorl+4 ;RS.L 1          ; end of memory         (upper bound of RAM)
+Sutill         EQU Ememl+4 ;RS.L 1          ; string utility ptr
+Clinel         EQU Sutill+4 ;RS.L 1          ; current line          (Basic line number)
+Blinel         EQU Clinel+4 ;RS.L 1          ; break line            (Basic line number)
+
+Cpntrl         EQU Blinel+4 ;RS.L 1          ; continue pointer
+Dlinel         EQU Cpntrl+4 ;RS.L 1          ; current DATA line
+Dptrl          EQU Dlinel+4 ;RS.L 1          ; DATA pointer
+Rdptrl         EQU Dptrl+4 ;RS.L 1          ; read pointer
+Varname        EQU Rdptrl+4 ;RS.L 1          ; current var name
+Cvaral         EQU Varname+4 ;RS.L 1          ; current var address
+Lvarpl         EQU Cvaral+4 ;RS.L 1          ; variable pointer for LET and FOR/NEXT
+
+des_sk_e       EQU Lvarpl+4 ;RS.L 6          ; descriptor stack end address
+des_sk         EQU des_sk_e+4*6 ;RS.W 1          ; descriptor stack start address
+; use a4 for the descriptor pointer
+Ibuffs         EQU des_sk+2 ;RS.L $40
+;               rept $40
+;               dc.l    0
+;               endr
+; ds.l $40                     ; start of input buffer
+Ibuffe          EQU Ibuffs+40*4 ;^^RSCOUNT
+; end of input buffer
+
+FAC1_m         EQU Ibuffe ; RS.L 1          ; FAC1 mantissa1
+FAC1_e         EQU FAC1_m+4 ; RS.W 1          ; FAC1 exponent
+FAC1_s          EQU FAC1_e+1    ; FAC1 sign (b7)
+                ;EQU RS.W 1
+
+FAC2_m         EQU FAC1_s+2 ;RS.L 1          ; FAC2 mantissa1
+FAC2_e         EQU FAC2_m+4 ; RS.L 1          ; FAC2 exponent
+FAC2_s          EQU FAC2_e+1    ; FAC2 sign (b7)
+FAC_sc          EQU FAC2_e+2    ; FAC sign comparison, Acc#1 vs #2
+flag            EQU FAC2_e+3    ; flag byte for divide routine
+
+PRNlword       EQU FAC2_e+4 ;RS.L 1          ; PRNG seed long word
+
+ut1_pl         EQU PRNlword+4 ;RS.L 1          ; utility pointer 1
+
+Asptl          EQU ut1_pl+4 ;RS.L 1          ; array size/pointer
+Astrtl         EQU Asptl+4 ;RS.L 1          ; array start pointer
+
+numexp          EQU Astrtl      ; string to float number exponent count
+expcnt          EQU Astrtl+1    ; string to float exponent count
+
+expneg          EQU Astrtl+3    ; string to float eval exponent -ve flag
+
+func_l         EQU Astrtl+4 ;RS.L 1          ; function pointer
+
+
+;                                              ; these two need to be a word aligned pair !
+Defdim         EQU func_l+4 ;RS.W 1          ; default DIM flag
+cosout          EQU Defdim      ; flag which CORDIC output (re-use byte)
+Dtypef          EQU Defdim+1    ; data type flag, $80=string, $40=integer, $00=float
+
+
+Binss          EQU Defdim+4 ;RS.L 4          ; number to bin string start (32 chrs)
+
+Decss          EQU Binss+4 ;RS.L 1          ; number to decimal string start (16 chrs)
+                ; RS.W 1          ;*
+Usdss          EQU Decss+6 ; RS.W 1          ; unsigned decimal string start (10 chrs)
+
+Hexss          EQU Usdss+2 ; RS.L 2          ; number to hex string start (8 chrs)
+
+BHsend         EQU Hexss+4*2 ; RS.W 1          ; bin/decimal/hex string end
+
+
+prstk          EQU BHsend+2 ;RS.B 1          ; stacked function index
+
+tpower         EQU prstk+1 ;RS.B 1          ; remember CORDIC power
+
+Asrch          EQU tpower+1 ;RS.B 1          ; scan-between-quotes flag, alt search character
+
+Dimcnt         EQU Asrch+1 ;RS.B 1          ; # of dimensions
+
+Breakf         EQU Dimcnt+1 ;RS.B 1          ; break flag, $00=END else=break
+Oquote         EQU Breakf+1 ;RS.B 1          ; open quote flag (Flag: DATA; LIST; memory)
+Gclctd         EQU Oquote+1 ;RS.B 1          ; garbage collected flag
+Sufnxf         EQU Gclctd+1 ;RS.B 1          ; subscript/FNX flag, 1xxx xxx = FN(0xxx xxx)
+Imode          EQU Sufnxf+1 ;RS.B 1          ; input mode flag, $00=INPUT, $98=READ
+
+Cflag          EQU Imode+1 ; RS.B 1          ; comparison evaluation flag
+
+TabSiz         EQU Cflag+1 ; RS.B 1          ; TAB step size
+
+comp_f         EQU TabSiz+1 ; RS.B 1          ; compare function flag, bits 0,1 and 2 used
+;                            ; bit 2 set if >
+;                            ; bit 1 set if =
+;                            ; bit 0 set if <
+
+Nullct         EQU comp_f+1 ; RS.B 1          ; nulls output after each line
+TPos           EQU Nullct+1 ; RS.B 1          ; BASIC terminal position byte
+TWidth         EQU TPos+1 ;  RS.B 1          ; BASIC terminal width byte
+Iclim          EQU TWidth+1 ; RS.B 1          ; input column limit
+ccflag         EQU Iclim+1 ; RS.B 1          ; CTRL-C check flag
+ccbyte         EQU ccflag+1 ; RS.B 1          ; CTRL-C last received byte
+ccnull         EQU ccbyte+1 ; RS.B 1          ; CTRL-C last received byte 'life' timer
+
+;; these variables for simulator load/save routines
+
+file_byte      EQU ccnull+1 ; RS.B 1          ; load/save data byte
+file_id        EQU file_byte+1 ; RS.L 1          ; load/save file ID
+
+                ;RS.W 1          ; dummy even value and zero pad byte
+
+prg_strt        EQU file_id+6 ; ^^RSCOUNT
+
+;ORG   ;*
 
 ;                pea     cls(PC)
 ;                move.w  #9,-(SP)
@@ -49,7 +255,7 @@
 ;                EVEN
 
 
-novar           EQU 0           ; non existant variables cause errors
+novar           .EQU 0           ; non existant variables cause errors
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -59,7 +265,7 @@ novar           EQU 0           ; non existant variables cause errors
 ; Ver 3.42 reimplements backspace so that characters are overwritten with [SPACE]
 ; Ver 3.41 removes undocumented features of the USING$() function
 ; Ver 3.40 adds the USING$() function
-; Ver 3.33 adds the file requester to LOAD and SAVE
+; Ver 3.33 adds the file r.EQUester to LOAD and SAVE
 ; Ver 3.32 adds the optional ELSE clause to IF .. THEN
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -68,7 +274,7 @@ novar           EQU 0           ; non existant variables cause errors
 ; response does not cause a program break. If this is the behaviour you want just
 ; change nobrk to some non zero value.
 
-nobrk           EQU 0           ; null response to INPUT causes a break
+nobrk           .EQU 0           ; null response to INPUT causes a break
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -199,8 +405,8 @@ RETCHR:
 ; LOAD routine for the Easy68k simulator
 
 VEC_LD:
-                lea     load_title(PC),A1 ; set the LOAD request title string pointer
-                bsr     get_filename    ; get the filename from the line or the request
+                lea     load_title(PC),A1 ; set the LOAD r.EQUest title string pointer
+                bsr     get_filename    ; get the filename from the line or the r.EQUest
 
                 beq     LAB_FCER        ; if null do function call error then warm start
 
@@ -256,15 +462,15 @@ LOAD_eof:
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
-; get the filename from the line or from the filename requester
+; get the filename from the line or from the filename r.EQUester
 *
-; if the name is null, "", or there is nothing following then the requester is used
-; to get a filename else the filename is got from the line. if the requester is used
+; if the name is null, "", or there is nothing following then the r.EQUester is used
+; to get a filename else the filename is got from the line. if the r.EQUester is used
 ; the name buffer is allocated in string space and is always null terminated before
-; it is passed to the file requester
+; it is passed to the file r.EQUester
 
 get_filename:
-                beq.s   get_name        ; if no following go use the requester
+                beq.s   get_name        ; if no following go use the r.EQUester
 
 get_file:
                 move.l  A1,-(SP)        ; save the title string pointer
@@ -276,7 +482,7 @@ get_file:
 
                 movea.l FAC1_m(A3),A2   ; get the descriptor pointer
                 move.w  4(A2),D1        ; get the string length
-                beq.s   get_name        ; if null go use the file requester
+                beq.s   get_name        ; if null go use the file r.EQUester
 
                 movea.l (A2),A1         ; get the string pointer
                 move.w  D1,D0           ; copy the string length
@@ -295,11 +501,11 @@ name_copy:
                 bra     LAB_22B6        ; pop string off descriptor stack or from memory
 ; returns with d0 = length, a0 = pointer
 
-; get a name with the file requester
+; get a name with the file r.EQUester
 
 get_name:
                 move.l  A3,-(SP)        ; save the variables base pointer
-                move.w  #$0100,D1       ; enough space for the request filename
+                move.w  #$0100,D1       ; enough space for the r.EQUest filename
                 bsr     LAB_2115        ; make space d1 bytes long
                 movea.l A0,A3           ; copy the file name buffer pointer
                 lea     file_list(PC),A2 ; set the file types list pointer
@@ -330,14 +536,14 @@ file_list:
 ; SAVE routine for the Easy68k simulator
 
 VEC_SV:
-                lea     save_title(PC),A1 ; set the SAVE request title string pointer
+                lea     save_title(PC),A1 ; set the SAVE r.EQUest title string pointer
                 pea     SAVE_RTN(PC)    ; set the return point
-                beq.s   get_name        ; if no following go use the file requester
+                beq.s   get_name        ; if no following go use the file r.EQUester
 
                 cmp.b   #',',D0         ; compare the following byte with ","
                 bne     get_file        ; if not "," get the filename from the line
 
-                beq.s   get_name        ; else go use the file requester
+                beq.s   get_name        ; else go use the file r.EQUester
 
 SAVE_RTN:
                 beq     LAB_FCER        ; if null do function call error then warm start
@@ -564,7 +770,7 @@ LAB_UVER:
                 moveq   #$24,D7         ; error code $24 "undefined variable" error
                 bra.s   LAB_XERR        ; do error #d7, then warm start
 
-                ENDC
+                ENDIF
 
 ; if you want a non existant variable to return a null value then set the novar
 ; value at the top of this file to some non zero value
@@ -582,7 +788,7 @@ LAB_UVER:
                 movea.l D0,A0           ; return a null address
                 rts
 
-                ENDC
+                ENDIF
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -818,7 +1024,7 @@ LAB_1295:
 ; crunch from (a5), output to (a0)
 ; returns .. d2 is length,
 ; d1 trashed, d0 trashed, a1 trashed
-                move.l  Itemp(A3),D1    ; get required line #
+                move.l  Itemp(A3),D1    ; get r.EQUired line #
                 bsr     LAB_SSLN        ; search BASIC for d1 line number
 ; returns pointer in a0
                 bcs.s   LAB_12E6        ; branch if not found
@@ -1178,7 +1384,7 @@ LAB_142C:
 
 LAB_SSLN:
                 movea.l Smeml(A3),A0    ; get start of program mem
-                bra.s   LAB_SCLN        ; go search for required line from a0
+                bra.s   LAB_SCLN        ; go search for r.EQUired line from a0
 
 LAB_145F:
                 movea.l D0,A0           ; copy next line pointer
@@ -1191,8 +1397,8 @@ LAB_SCLN:
                 move.l  (A0)+,D0        ; get next line pointer and point to line #
                 beq.s   LAB_145E        ; is end marker so we're done, do 'no line' exit
 
-                cmp.l   (A0),D1         ; compare this line # with required line #
-                bgt.s   LAB_145F        ; loop if required # > this #
+                cmp.l   (A0),D1         ; compare this line # with r.EQUired line #
+                bgt.s   LAB_145F        ; loop if r.EQUired # > this #
 
                 subq.w  #4,A0           ; adjust pointer, flags not changed
                 rts
@@ -1541,7 +1747,7 @@ LAB_RESTORE:
                 beq.s   LAB_1624        ; branch if next character null (RESTORE)
 
                 bsr     LAB_GFPN        ; get fixed-point number into temp integer & d1
-                cmp.l   Clinel(A3),D1   ; compare current line # with required line #
+                cmp.l   Clinel(A3),D1   ; compare current line # with r.EQUired line #
                 bls.s   LAB_GSCH        ; branch if >= (start search from beginning)
 
                 movea.l A5,A0           ; copy BASIC execute pointer
@@ -1997,7 +2203,7 @@ LAB_17B7:
 
                 beq.s   LAB_INCT        ; if variable not found skip the inc/dec
 
-                ENDC
+                ENDIF
 
                 tst.b   Dtypef(A3)      ; test data type, $80=string, $40=integer,
 ; $00=float
@@ -2386,7 +2592,7 @@ LAB_1934:
 
                 bra.s   LAB_1953        ; go handle the input
 
-                ENDC
+                ENDIF
 
 ; if you do want a null response to INPUT to break the program then leave the nobrk
 ; value at the top of this file set to zero
@@ -2398,7 +2604,7 @@ LAB_1934:
 
                 bra     LAB_1647        ; go do BREAK exit
 
-                ENDC
+                ENDIF
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -2440,7 +2646,7 @@ LAB_1961:
                 move.l  A0,Rdptrl(A3)   ; save the READ pointer
                 bra.s   LAB_1961        ; go handle the input
 
-                ENDC
+                ENDIF
 
 ; if you do want a null response to INPUT to break the program then leave the nobrk
 ; value at the top of this file set to zero
@@ -2456,7 +2662,7 @@ LAB_1984:
                 movea.l A0,A5           ; set the execute pointer to the buffer
                 subq.w  #1,A5           ; decrement the execute pointer
 
-                ENDC
+                ENDIF
 
 LAB_1985:
                 bsr     LAB_IGBY        ; increment & scan memory
@@ -2660,7 +2866,7 @@ LAB_EVNM:
 ; check if source is numeric, else do type mismatch
 
 LAB_CTNM:
-                cmp.w   D0,D0           ; required type is numeric so clear carry
+                cmp.w   D0,D0           ; r.EQUired type is numeric so clear carry
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -2672,13 +2878,13 @@ LAB_CKTM:
                 bne.s   LAB_1ABA        ; branch if data type is string
 
 ; else data type was numeric
-                bcs     LAB_TMER        ; if required type is string do type mismatch
+                bcs     LAB_TMER        ; if r.EQUired type is string do type mismatch
 ; error
 
                 rts
-; data type was string, now check required type
+; data type was string, now check r.EQUired type
 LAB_1ABA:
-                bcc     LAB_TMER        ; if required type is numeric do type mismatch
+                bcc     LAB_TMER        ; if r.EQUired type is numeric do type mismatch
 ; error
                 rts
 
@@ -2998,7 +3204,7 @@ LAB_1C18:
 
                 lea     LAB_1D96(PC),A0 ; else return a null descriptor/pointer
 
-                ENDC
+                ENDIF
 
 ; return existing variable value
 
@@ -3621,7 +3827,7 @@ LAB_1DD7:
 
                 moveq   #-1,D0          ; return variable found
 
-                ENDC
+                ENDIF
 
                 rts
 
@@ -4546,7 +4752,7 @@ LAB_2317:
 ; get here with ...
 ;   a0 - points to descriptor
 ;   d0 - is offset from string start
-;   d1 - is required string length
+;   d1 - is r.EQUired string length
 
 LAB_231C:
                 movea.l A0,A1           ; save string descriptor pointer
@@ -4598,7 +4804,7 @@ LAB_2358:
 
                 move.l  D7,D1           ; get length back
                 add.w   D0,D7           ; d7 now = MID$() end
-                bcs.s   LAB_2368        ; already too long so do RIGHT$ equivalent
+                bcs.s   LAB_2368        ; already too long so do RIGHT$ .EQUivalent
 
                 cmp.w   4(A0),D7        ; compare string length with start index+length
                 bcs.s   LAB_231C        ; if end in string go do string
@@ -4700,7 +4906,7 @@ LAB_SADD:
                 move.l  A0,D0           ; test the variable found flag
                 beq     LAB_AYFC        ; if not found go return null
 
-                ENDC
+                ENDIF
 
                 move.l  (A0),D0         ; get string address
                 bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
@@ -4988,7 +5194,7 @@ LAB_SWAP:
                 move.w  (A2),(A0)       ; copy string 1 length to string 2 length
                 move.w  D0,(A2)         ; save string 2 length to string 1 length
 
-                ENDC
+                ENDIF
 
 
 ; if you want a non existant variable to return a null value then set the novar
@@ -5032,7 +5238,7 @@ no_variable2:
                 move.w  D1,(A2)         ; save variable 1 new string length
 EXIT_SWAP:
 
-                ENDC
+                ENDIF
 
                 rts
 
@@ -5155,7 +5361,7 @@ LAB_2468:
                 move.l  D1,(A0)         ; save it back
                 move.l  (SP)+,D1        ; restore d1
 
-; exponents are equal now do mantissa add or
+; exponents are .EQUal now do mantissa add or
 ; subtract
 LAB_24A8:
                 tst.b   FAC_sc(A3)      ; test sign compare (FAC1 EOR FAC2)
@@ -5476,7 +5682,7 @@ LAB_DIVIDE:
                 move.l  FAC1_m(A3),D3   ; get FAC1 mantissa
                 move.l  FAC2_m(A3),D4   ; get FAC2 mantissa
                 cmp.l   D3,D4           ; compare FAC2 with FAC1 mantissa
-                beq.s   LAB_MAN1        ; set mantissa result = 1 if equal
+                beq.s   LAB_MAN1        ; set mantissa result = 1 if .EQUal
 
                 bcs.s   AC1gtAC2        ; branch if FAC1 > FAC2
 
@@ -5841,7 +6047,7 @@ LAB_27FA:
 
                 move.l  FAC2_m(A3),D1   ; get FAC2 mantissa
                 cmp.l   FAC1_m(A3),D1   ; compare mantissas
-                beq.s   LAB_282F        ; exit if mantissas equal
+                beq.s   LAB_282F        ; exit if mantissas .EQUal
 
 ; gets here if number <> FAC1
 
@@ -6224,7 +6430,7 @@ LAB_27F0:
 
                 move.l  FAC2_m(A3),D1   ; get FAC2 mantissa
                 cmp.l   FAC1_m(A3),D1   ; compare mantissas
-                beq.s   LAB_27F3        ; exit if mantissas equal
+                beq.s   LAB_27F3        ; exit if mantissas .EQUal
 
 LAB_27F1:
                 bcs.s   LAB_27F2        ; if FAC1 > FAC2 return d0=+1,C=0
@@ -6503,8 +6709,8 @@ LAB_EXAD:
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
-; RND(n), 32 bit Galois version. make n=0 for 19th next number in sequence or n<>0
-; to get 19th next number in sequence after seed n. This version of the PRNG uses
+; RND(n), 32 bit Galois version. make n=0 for 19th next number in s.EQUence or n<>0
+; to get 19th next number in s.EQUence after seed n. This version of the PRNG uses
 ; the Galois method and a sample of 65536 bytes produced gives the following values.
 
 ; Entropy = 7.997442 bits per byte
@@ -6813,14 +7019,14 @@ LAB_BTST:
 ;*
 ; perform USING$()
 
-fsd             EQU 0           ;   (sp) format string descriptor pointer
-fsti            EQU 4           ;  4(sp) format string this index
-fsli            EQU 6           ;  6(sp) format string last index
-fsdpi           EQU 8           ;  8(sp) format string decimal point index
-fsdc            EQU 10          ; 10(sp) format string decimal characters
-fend            EQU 12-4        ;  x(sp) end-4, fsd is popped by itself
+fsd             .EQU 0           ;   (sp) format string descriptor pointer
+fsti            .EQU 4           ;  4(sp) format string this index
+fsli            .EQU 6           ;  6(sp) format string last index
+fsdpi           .EQU 8           ;  8(sp) format string decimal point index
+fsdc            .EQU 10          ; 10(sp) format string decimal characters
+fend            .EQU 12-4        ;  x(sp) end-4, fsd is popped by itself
 
-ofchr           EQU '#'         ; the overflow character
+ofchr           .EQU '#'         ; the overflow character
 
 LAB_USINGS:
                 tst.b   Dtypef(A3)      ; test data type, $80=string
@@ -7269,7 +7475,7 @@ LAB_D00A:
                 moveq   #0,D2           ; else reset the format string index
 LAB_D00E:
                 cmp.w   D2,D6           ; compare the index with this index
-                bne.s   LAB_D00A        ; if not equal go do the next character
+                bne.s   LAB_D00A        ; if not .EQUal go do the next character
 
                 rts
 
@@ -7734,7 +7940,7 @@ LAB_TWOPI:
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
-; get ASCII string equivalent into FAC1 as integer32 or float
+; get ASCII string .EQUivalent into FAC1 as integer32 or float
 
 ; entry is with a5 pointing to the first character of the string
 ; exit with a5 pointing to the first character after the string
@@ -8073,107 +8279,107 @@ RTS_025:
 ;*
 ; token values needed for BASIC
 
-TK_END          EQU $80         ; $80
-TK_FOR          EQU TK_END+1    ; $81
-TK_NEXT         EQU TK_FOR+1    ; $82
-TK_DATA         EQU TK_NEXT+1   ; $83
-TK_INPUT        EQU TK_DATA+1   ; $84
-TK_DIM          EQU TK_INPUT+1  ; $85
-TK_READ         EQU TK_DIM+1    ; $86
-TK_LET          EQU TK_READ+1   ; $87
-TK_DEC          EQU TK_LET+1    ; $88
-TK_GOTO         EQU TK_DEC+1    ; $89
-TK_RUN          EQU TK_GOTO+1   ; $8A
-TK_IF           EQU TK_RUN+1    ; $8B
-TK_RESTORE      EQU TK_IF+1     ; $8C
-TK_GOSUB        EQU TK_RESTORE+1 ; $8D
-TK_RETURN       EQU TK_GOSUB+1  ; $8E
-TK_REM          EQU TK_RETURN+1 ; $8F
-TK_STOP         EQU TK_REM+1    ; $90
-TK_ON           EQU TK_STOP+1   ; $91
-TK_NULL         EQU TK_ON+1     ; $92
-TK_INC          EQU TK_NULL+1   ; $93
-TK_WAIT         EQU TK_INC+1    ; $94
-TK_LOAD         EQU TK_WAIT+1   ; $95
-TK_SAVE         EQU TK_LOAD+1   ; $96
-TK_DEF          EQU TK_SAVE+1   ; $97
-TK_POKE         EQU TK_DEF+1    ; $98
-TK_DOKE         EQU TK_POKE+1   ; $99
-TK_LOKE         EQU TK_DOKE+1   ; $9A
-TK_CALL         EQU TK_LOKE+1   ; $9B
-TK_DO           EQU TK_CALL+1   ; $9C
-TK_LOOP         EQU TK_DO+1     ; $9D
-TK_PRINT        EQU TK_LOOP+1   ; $9E
-TK_CONT         EQU TK_PRINT+1  ; $9F
-TK_LIST         EQU TK_CONT+1   ; $A0
-TK_CLEAR        EQU TK_LIST+1   ; $A1
-TK_NEW          EQU TK_CLEAR+1  ; $A2
-TK_WIDTH        EQU TK_NEW+1    ; $A3
-TK_GET          EQU TK_WIDTH+1  ; $A4
-TK_SWAP         EQU TK_GET+1    ; $A5
-TK_BITSET       EQU TK_SWAP+1   ; $A6
-TK_BITCLR       EQU TK_BITSET+1 ; $A7
-TK_TAB          EQU TK_BITCLR+1 ; $A8
-TK_ELSE         EQU TK_TAB+1    ; $A9
-TK_TO           EQU TK_ELSE+1   ; $AA
-TK_FN           EQU TK_TO+1     ; $AB
-TK_SPC          EQU TK_FN+1     ; $AC
-TK_THEN         EQU TK_SPC+1    ; $AD
-TK_NOT          EQU TK_THEN+1   ; $AE
-TK_STEP         EQU TK_NOT+1    ; $AF
-TK_UNTIL        EQU TK_STEP+1   ; $B0
-TK_WHILE        EQU TK_UNTIL+1  ; $B1
-TK_PLUS         EQU TK_WHILE+1  ; $B2
-TK_MINUS        EQU TK_PLUS+1   ; $B3
-TK_MULT         EQU TK_MINUS+1  ; $B4
-TK_DIV          EQU TK_MULT+1   ; $B5
-TK_POWER        EQU TK_DIV+1    ; $B6
-TK_AND          EQU TK_POWER+1  ; $B7
-TK_EOR          EQU TK_AND+1    ; $B8
-TK_OR           EQU TK_EOR+1    ; $B9
-TK_RSHIFT       EQU TK_OR+1     ; $BA
-TK_LSHIFT       EQU TK_RSHIFT+1 ; $BB
-TK_GT           EQU TK_LSHIFT+1 ; $BC
-TK_EQUAL        EQU TK_GT+1     ; $BD
-TK_LT           EQU TK_EQUAL+1  ; $BE
-TK_SGN          EQU TK_LT+1     ; $BF
-TK_INT          EQU TK_SGN+1    ; $C0
-TK_ABS          EQU TK_INT+1    ; $C1
-TK_USR          EQU TK_ABS+1    ; $C2
-TK_FRE          EQU TK_USR+1    ; $C3
-TK_POS          EQU TK_FRE+1    ; $C4
-TK_SQR          EQU TK_POS+1    ; $C5
-TK_RND          EQU TK_SQR+1    ; $C6
-TK_LOG          EQU TK_RND+1    ; $C7
-TK_EXP          EQU TK_LOG+1    ; $C8
-TK_COS          EQU TK_EXP+1    ; $C9
-TK_SIN          EQU TK_COS+1    ; $CA
-TK_TAN          EQU TK_SIN+1    ; $CB
-TK_ATN          EQU TK_TAN+1    ; $CC
-TK_PEEK         EQU TK_ATN+1    ; $CD
-TK_DEEK         EQU TK_PEEK+1   ; $CE
-TK_LEEK         EQU TK_DEEK+1   ; $CF
-TK_LEN          EQU TK_LEEK+1   ; $D0
-TK_STRS         EQU TK_LEN+1    ; $D1
-TK_VAL          EQU TK_STRS+1   ; $D2
-TK_ASC          EQU TK_VAL+1    ; $D3
-TK_UCASES       EQU TK_ASC+1    ; $D4
-TK_LCASES       EQU TK_UCASES+1 ; $D5
-TK_CHRS         EQU TK_LCASES+1 ; $D6
-TK_HEXS         EQU TK_CHRS+1   ; $D7
-TK_BINS         EQU TK_HEXS+1   ; $D8
-TK_BITTST       EQU TK_BINS+1   ; $D9
-TK_MAX          EQU TK_BITTST+1 ; $DA
-TK_MIN          EQU TK_MAX+1    ; $DB
-TK_RAM          EQU TK_MIN+1    ; $DC
-TK_PI           EQU TK_RAM+1    ; $DD
-TK_TWOPI        EQU TK_PI+1     ; $DE
-TK_VPTR         EQU TK_TWOPI+1  ; $DF
-TK_SADD         EQU TK_VPTR+1   ; $E0
-TK_LEFTS        EQU TK_SADD+1   ; $E1
-TK_RIGHTS       EQU TK_LEFTS+1  ; $E2
-TK_MIDS         EQU TK_RIGHTS+1 ; $E3
-TK_USINGS       EQU TK_MIDS+1   ; $E4
+TK_END          .EQU $80         ; $80
+TK_FOR          .EQU TK_END+1    ; $81
+TK_NEXT         .EQU TK_FOR+1    ; $82
+TK_DATA         .EQU TK_NEXT+1   ; $83
+TK_INPUT        .EQU TK_DATA+1   ; $84
+TK_DIM          .EQU TK_INPUT+1  ; $85
+TK_READ         .EQU TK_DIM+1    ; $86
+TK_LET          .EQU TK_READ+1   ; $87
+TK_DEC          .EQU TK_LET+1    ; $88
+TK_GOTO         .EQU TK_DEC+1    ; $89
+TK_RUN          .EQU TK_GOTO+1   ; $8A
+TK_IF           .EQU TK_RUN+1    ; $8B
+TK_RESTORE      .EQU TK_IF+1     ; $8C
+TK_GOSUB        .EQU TK_RESTORE+1 ; $8D
+TK_RETURN       .EQU TK_GOSUB+1  ; $8E
+TK_REM          .EQU TK_RETURN+1 ; $8F
+TK_STOP         .EQU TK_REM+1    ; $90
+TK_ON           .EQU TK_STOP+1   ; $91
+TK_NULL         .EQU TK_ON+1     ; $92
+TK_INC          .EQU TK_NULL+1   ; $93
+TK_WAIT         .EQU TK_INC+1    ; $94
+TK_LOAD         .EQU TK_WAIT+1   ; $95
+TK_SAVE         .EQU TK_LOAD+1   ; $96
+TK_DEF          .EQU TK_SAVE+1   ; $97
+TK_POKE         .EQU TK_DEF+1    ; $98
+TK_DOKE         .EQU TK_POKE+1   ; $99
+TK_LOKE         .EQU TK_DOKE+1   ; $9A
+TK_CALL         .EQU TK_LOKE+1   ; $9B
+TK_DO           .EQU TK_CALL+1   ; $9C
+TK_LOOP         .EQU TK_DO+1     ; $9D
+TK_PRINT        .EQU TK_LOOP+1   ; $9E
+TK_CONT         .EQU TK_PRINT+1  ; $9F
+TK_LIST         .EQU TK_CONT+1   ; $A0
+TK_CLEAR        .EQU TK_LIST+1   ; $A1
+TK_NEW          .EQU TK_CLEAR+1  ; $A2
+TK_WIDTH        .EQU TK_NEW+1    ; $A3
+TK_GET          .EQU TK_WIDTH+1  ; $A4
+TK_SWAP         .EQU TK_GET+1    ; $A5
+TK_BITSET       .EQU TK_SWAP+1   ; $A6
+TK_BITCLR       .EQU TK_BITSET+1 ; $A7
+TK_TAB          .EQU TK_BITCLR+1 ; $A8
+TK_ELSE         .EQU TK_TAB+1    ; $A9
+TK_TO           .EQU TK_ELSE+1   ; $AA
+TK_FN           .EQU TK_TO+1     ; $AB
+TK_SPC          .EQU TK_FN+1     ; $AC
+TK_THEN         .EQU TK_SPC+1    ; $AD
+TK_NOT          .EQU TK_THEN+1   ; $AE
+TK_STEP         .EQU TK_NOT+1    ; $AF
+TK_UNTIL        .EQU TK_STEP+1   ; $B0
+TK_WHILE        .EQU TK_UNTIL+1  ; $B1
+TK_PLUS         .EQU TK_WHILE+1  ; $B2
+TK_MINUS        .EQU TK_PLUS+1   ; $B3
+TK_MULT         .EQU TK_MINUS+1  ; $B4
+TK_DIV          .EQU TK_MULT+1   ; $B5
+TK_POWER        .EQU TK_DIV+1    ; $B6
+TK_AND          .EQU TK_POWER+1  ; $B7
+TK_EOR          .EQU TK_AND+1    ; $B8
+TK_OR           .EQU TK_EOR+1    ; $B9
+TK_RSHIFT       .EQU TK_OR+1     ; $BA
+TK_LSHIFT       .EQU TK_RSHIFT+1 ; $BB
+TK_GT           .EQU TK_LSHIFT+1 ; $BC
+TK_EQUAL        .EQU TK_GT+1     ; $BD
+TK_LT           .EQU TK_EQUAL+1  ; $BE
+TK_SGN          .EQU TK_LT+1     ; $BF
+TK_INT          .EQU TK_SGN+1    ; $C0
+TK_ABS          .EQU TK_INT+1    ; $C1
+TK_USR          .EQU TK_ABS+1    ; $C2
+TK_FRE          .EQU TK_USR+1    ; $C3
+TK_POS          .EQU TK_FRE+1    ; $C4
+TK_SQR          .EQU TK_POS+1    ; $C5
+TK_RND          .EQU TK_SQR+1    ; $C6
+TK_LOG          .EQU TK_RND+1    ; $C7
+TK_EXP          .EQU TK_LOG+1    ; $C8
+TK_COS          .EQU TK_EXP+1    ; $C9
+TK_SIN          .EQU TK_COS+1    ; $CA
+TK_TAN          .EQU TK_SIN+1    ; $CB
+TK_ATN          .EQU TK_TAN+1    ; $CC
+TK_PEEK         .EQU TK_ATN+1    ; $CD
+TK_DEEK         .EQU TK_PEEK+1   ; $CE
+TK_LEEK         .EQU TK_DEEK+1   ; $CF
+TK_LEN          .EQU TK_LEEK+1   ; $D0
+TK_STRS         .EQU TK_LEN+1    ; $D1
+TK_VAL          .EQU TK_STRS+1   ; $D2
+TK_ASC          .EQU TK_VAL+1    ; $D3
+TK_UCASES       .EQU TK_ASC+1    ; $D4
+TK_LCASES       .EQU TK_UCASES+1 ; $D5
+TK_CHRS         .EQU TK_LCASES+1 ; $D6
+TK_HEXS         .EQU TK_CHRS+1   ; $D7
+TK_BINS         .EQU TK_HEXS+1   ; $D8
+TK_BITTST       .EQU TK_BINS+1   ; $D9
+TK_MAX          .EQU TK_BITTST+1 ; $DA
+TK_MIN          .EQU TK_MAX+1    ; $DB
+TK_RAM          .EQU TK_MIN+1    ; $DC
+TK_PI           .EQU TK_RAM+1    ; $DD
+TK_TWOPI        .EQU TK_PI+1     ; $DE
+TK_VPTR         .EQU TK_TWOPI+1  ; $DF
+TK_SADD         .EQU TK_VPTR+1   ; $E0
+TK_LEFTS        .EQU TK_SADD+1   ; $E1
+TK_RIGHTS       .EQU TK_LEFTS+1  ; $E2
+TK_MIDS         .EQU TK_RIGHTS+1 ; $E3
+TK_USINGS       .EQU TK_MIDS+1   ; $E4
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -8436,7 +8642,7 @@ LAB_1D96:
                 DC.L $00        ; atn(2^-32)
 
 ; constants are normalised to n integer bits and are tanh(2^-i)
-n               EQU 2
+n               .EQU 2
 TAB_HTHET:
                 DC.L $8C9F53D0>>n ; atnh(2^-1)    .549306144
                 DC.L $4162BBE8>>n ; atnh(2^-2)    .255412812
@@ -8471,7 +8677,7 @@ TAB_HTHET:
                 DC.L $02>>n     ; atnh(2^-31)
                 DC.L $01>>n     ; atnh(2^-32)
 
-KFCTSEED        EQU $9A8F4441>>n ; $26A3D110
+KFCTSEED        .EQU $9A8F4441>>n ; $26A3D110
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -9274,220 +9480,18 @@ LAB_SMSG:
                 DC.B ' Bytes free',$0D,$0A,$0A
                 DC.B 'Enhanced 68k BASIC Version 3.52',$0D,$0A,$00
 
-;       OFFSET  0                       ; start of RAM
-                RSRESET
-
-ram_strt:       RS.L 256
-;                               rept $100
-;                               dc.l 0
-;                               endr
-;ds.l   $100                    ; allow 1K for the stack, this should be plenty
-; for any BASIC program that doesn't do something
-; silly, it could even be much less.
-ram_base        EQU ^^RSCOUNT
-LAB_WARM:       RS.W 1          ; BASIC warm start entry point
-Wrmjpv:         RS.L 1          ; BASIC warm start jump vector
-
-Usrjmp:         RS.W 1          ; USR function JMP address
-Usrjpv:         RS.L 1          ; USR function JMP vector
-
-;; system dependant i/o vectors
-;; these are in RAM and are set at start-up
-
-V_INPT:         RS.W 1          ; non halting scan input device entry point
-V_INPTv:        RS.L 1          ; non halting scan input device jump vector
-
-V_OUTP:         RS.W 1          ; send byte to output device entry point
-V_OUTPv:        RS.L 1          ; send byte to output device jump vector
-
-V_LOAD:         RS.W 1          ; load BASIC program entry point
-V_LOADv:        RS.L 1          ; load BASIC program jump vector
-
-V_SAVE:         RS.W 1          ; save BASIC program entry point
-V_SAVEv:        RS.L 1          ; save BASIC program jump vector
-
-V_CTLC:         RS.W 1          ; save CTRL-C check entry point
-V_CTLCv:        RS.L 1          ; save CTRL-C check jump vector
-
-Itemp:          RS.L 1          ; temporary integer     (for GOTO etc)
-
-Smeml:          RS.L 1          ; start of memory               (start of program)
-
-;; the program is stored as a series of lines each line having the following format
-;*
-;*              ds.l    1                       ; pointer to the next line or $00000000 if [EOT]
-;*              ds.l    1                       ; line number
-;*              ds.b    n                       ; program bytes
-;*              dc.b    $00                     ; [EOL] marker, there will be a second $00 byte, if
-;*                                              ; needed, to pad the line to an even number of bytes
-
-Sfncl:          RS.L 1          ; start of functions    (end of Program)
-
-;; the functions are stored as function name, function execute pointer and function
-;; variable name
-;*
-;*              ds.l    1                       ; name
-;*              ds.l    1                       ; execute pointer
-;*              ds.l    1                       ; function variable
-
-Svarl:          RS.L 1          ; start of variables    (end of functions)
-
-;; the variables are stored as variable name, variable value
-;*
-;*              ds.l    1                       ; name
-;*              ds.l    1                       ; packed float or integer value
-
-Sstrl:          RS.L 1          ; start of strings      (end of variables)
-
-;; the strings are stored as string name, string pointer and string length
-;*
-;*              ds.l    1                       ; name
-;*              ds.l    1                       ; string pointer
-;*              ds.w    1                       ; string length
-
-Sarryl:         RS.L 1          ; start of arrays               (end of strings)
-
-;; the arrays are stored as array name, array size, array dimensions count, array
-;; dimensions upper bounds and array elements
-;*
-;*              ds.l    1                       ; name
-;*              ds.l    1                       ; size including this header
-;*              ds.w    1                       ; dimensions count
-;*              ds.w    1                       ; 1st dimension upper bound
-;*              ds.w    1                       ; 2nd dimension upper bound
-;*              ...                             ; ...
-;*              ds.w    1                       ; nth dimension upper bound
-;*
-;; then (i1+1)*(i2+1)...*(in+1) of either ..
-;*
-;*              ds.l    1                       ; packed float or integer value
-;*
-;; .. if float or integer, or ..
-;*
-;*              ds.l    1                       ; string pointer
-;*              ds.w    1                       ; string length
-;*
-;; .. if string
-
-Earryl:         RS.L 1          ; end of arrays         (start of free mem)
-Sstorl:         RS.L 1          ; string storage                (moving down)
-Ememl:          RS.L 1          ; end of memory         (upper bound of RAM)
-Sutill:         RS.L 1          ; string utility ptr
-Clinel:         RS.L 1          ; current line          (Basic line number)
-Blinel:         RS.L 1          ; break line            (Basic line number)
-
-Cpntrl:         RS.L 1          ; continue pointer
-Dlinel:         RS.L 1          ; current DATA line
-Dptrl:          RS.L 1          ; DATA pointer
-Rdptrl:         RS.L 1          ; read pointer
-Varname:        RS.L 1          ; current var name
-Cvaral:         RS.L 1          ; current var address
-Lvarpl:         RS.L 1          ; variable pointer for LET and FOR/NEXT
-
-des_sk_e:       RS.L 6          ; descriptor stack end address
-des_sk:         RS.W 1          ; descriptor stack start address
-; use a4 for the descriptor pointer
-Ibuffs:         RS.L $40
-;               rept $40
-;               dc.l    0
-;               endr
-; ds.l $40                     ; start of input buffer
-Ibuffe          EQU ^^RSCOUNT
-; end of input buffer
-
-FAC1_m:         RS.L 1          ; FAC1 mantissa1
-FAC1_e:         RS.W 1          ; FAC1 exponent
-FAC1_s          EQU FAC1_e+1    ; FAC1 sign (b7)
-                RS.W 1
-
-FAC2_m:         RS.L 1          ; FAC2 mantissa1
-FAC2_e:         RS.L 1          ; FAC2 exponent
-FAC2_s          EQU FAC2_e+1    ; FAC2 sign (b7)
-FAC_sc          EQU FAC2_e+2    ; FAC sign comparison, Acc#1 vs #2
-flag            EQU FAC2_e+3    ; flag byte for divide routine
-
-PRNlword:       RS.L 1          ; PRNG seed long word
-
-ut1_pl:         RS.L 1          ; utility pointer 1
-
-Asptl:          RS.L 1          ; array size/pointer
-Astrtl:         RS.L 1          ; array start pointer
-
-numexp          EQU Astrtl      ; string to float number exponent count
-expcnt          EQU Astrtl+1    ; string to float exponent count
-
-expneg          EQU Astrtl+3    ; string to float eval exponent -ve flag
-
-func_l:         RS.L 1          ; function pointer
-
-
-;                                               ; these two need to be a word aligned pair !
-Defdim:         RS.W 1          ; default DIM flag
-cosout          EQU Defdim      ; flag which CORDIC output (re-use byte)
-Dtypef          EQU Defdim+1    ; data type flag, $80=string, $40=integer, $00=float
-
-
-Binss:          RS.L 4          ; number to bin string start (32 chrs)
-
-Decss:          RS.L 1          ; number to decimal string start (16 chrs)
-                RS.W 1          ;*
-Usdss:          RS.W 1          ; unsigned decimal string start (10 chrs)
-
-Hexss:          RS.L 2          ; number to hex string start (8 chrs)
-
-BHsend:         RS.W 1          ; bin/decimal/hex string end
-
-
-prstk:          RS.B 1          ; stacked function index
-
-tpower:         RS.B 1          ; remember CORDIC power
-
-Asrch:          RS.B 1          ; scan-between-quotes flag, alt search character
-
-Dimcnt:         RS.B 1          ; # of dimensions
-
-Breakf:         RS.B 1          ; break flag, $00=END else=break
-Oquote:         RS.B 1          ; open quote flag (Flag: DATA; LIST; memory)
-Gclctd:         RS.B 1          ; garbage collected flag
-Sufnxf:         RS.B 1          ; subscript/FNX flag, 1xxx xxx = FN(0xxx xxx)
-Imode:          RS.B 1          ; input mode flag, $00=INPUT, $98=READ
-
-Cflag:          RS.B 1          ; comparison evaluation flag
-
-TabSiz:         RS.B 1          ; TAB step size
-
-comp_f:         RS.B 1          ; compare function flag, bits 0,1 and 2 used
-;                             ; bit 2 set if >
-;                             ; bit 1 set if =
-;                             ; bit 0 set if <
-
-Nullct:         RS.B 1          ; nulls output after each line
-TPos:           RS.B 1          ; BASIC terminal position byte
-TWidth:         RS.B 1          ; BASIC terminal width byte
-Iclim:          RS.B 1          ; input column limit
-ccflag:         RS.B 1          ; CTRL-C check flag
-ccbyte:         RS.B 1          ; CTRL-C last received byte
-ccnull:         RS.B 1          ; CTRL-C last received byte 'life' timer
-
-;; these variables for simulator load/save routines
-
-file_byte:      RS.B 1          ; load/save data byte
-file_id:        RS.L 1          ; load/save file ID
-
-                RS.W 1          ; dummy even value and zero pad byte
-
-prg_strt        EQU ^^RSCOUNT
-
-;ORG   ;*
 
 ram_addr        EQU $080000     ; RAM start address
 ram_size        EQU $080000     ; RAM size
 
-listing:        IBYTES 'TEST.BAS'
-                EVEN
-
-
-RAM:            DS.L 8192
+RAM:            
+				rept 8192
+				Dc.L 0
+				endr
 RAM_END:
 RAM_SIZE        EQU RAM_END-RAM
+
+listing:        INCBIN 'TEST.BAS'
+                EVEN
+
                 END
