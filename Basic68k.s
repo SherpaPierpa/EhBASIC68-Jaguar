@@ -8021,6 +8021,14 @@ LAB_PI:
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+;*
+; perform U235PAD1
+
+LAB_U235PAD1:
+				move.l	U235SE_pad1,d0
+                bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
+
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
 ; perform TWOPI
 
@@ -8473,7 +8481,7 @@ TK_LEFTS        .EQU TK_SADD+1   ; $E1
 TK_RIGHTS       .EQU TK_LEFTS+1  ; $E2
 TK_MIDS         .EQU TK_RIGHTS+1 ; $E3
 TK_USINGS       .EQU TK_MIDS+1   ; $E4
-
+TK_U235PAD1		.EQU TK_USINGS+1
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -8863,6 +8871,7 @@ LAB_FTPP:
                 DC.W LAB_LRMS-LAB_FTPP ; RIGHT$()              "
                 DC.W LAB_LRMS-LAB_FTPP ; MID$()                "
                 DC.W LAB_EVEZ-LAB_FTPP ; USING$(x)     process any expression
+				dc.w LAB_PPBI-LAB_FTPP		; U235PAD1		NONE
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -8908,7 +8917,7 @@ LAB_FTBL:
                 DC.W LAB_RIGHT-LAB_FTBL ; RIGHT$()
                 DC.W LAB_MIDS-LAB_FTBL ; MID$()
                 DC.W LAB_USINGS-LAB_FTBL ; USING$()
-
+				DC.W LAB_U235PAD1-LAB_FTBL
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9237,6 +9246,8 @@ LAB_KEYT:
                 DC.B 'U',5
                 DC.W KEY_USINGS-TAB_STAR ; USING$(
 
+				dc.b 'U',6
+				dc.w KEY_U235PAD1-TAB_STAR
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9531,6 +9542,7 @@ KEY_TWOPI:
                 DC.B 'WOPI',TK_TWOPI ; TWOPI
                 DC.B $00
 TAB_ASCU:
+KEY_U235PAD1:	dc.b '235PAD1',TK_U235PAD1
 KEY_UCASES:
                 DC.B 'CASE$(',TK_UCASES ; UCASE$(
 KEY_UNTIL:
