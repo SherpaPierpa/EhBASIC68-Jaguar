@@ -34,213 +34,7 @@
 ; option of not returning an error for a non existant variable. If this is the
 ; behaviour you want just change novar to some non zero value
 
-;                OPT D+
-;       OFFSET  0                       ; start of RAM
-;                RSRESET
-
-;ram_strt:       RS.L 256
-ram_strt        EQU 0
-;                               rept $100
-;                               dc.l 0
-;                               endr
-;ds.l   $100                    ; allow 1K for the stack, this should be plenty
-; for any BASIC program that doesn't do something
-; silly, it could even be much less.
-ram_base        EQU ram_strt+1024
-LAB_WARM        EQU ram_base    ;RS.W 1          ; BASIC warm start entry point
-Wrmjpv          EQU LAB_WARM+2  ;RS.L 1          ; BASIC warm start jump vector
-
-Usrjmp          EQU Wrmjpv+4    ;RS.W 1          ; USR function JMP address
-Usrjpv          EQU Usrjmp+2    ;RS.L 1          ; USR function JMP vector
-
-;; system dependant i/o vectors
-;; these are in RAM and are set at start-up
-
-V_INPT          EQU Usrjpv+4    ;RS.W 1          ; non halting scan input device entry point
-V_INPTv         EQU V_INPT+2    ;RS.L 1          ; non halting scan input device jump vector
-
-V_OUTP          EQU V_INPTv+4   ;RS.W 1          ; send byte to output device entry point
-V_OUTPv         EQU V_OUTP+2    ;RS.L 1          ; send byte to output device jump vector
-
-V_LOAD          EQU V_OUTPv+4   ;RS.W 1          ; load BASIC program entry point
-V_LOADv         EQU V_LOAD+2    ;RS.L 1          ; load BASIC program jump vector
-
-V_SAVE          EQU V_LOADv+4   ;RS.W 1          ; save BASIC program entry point
-V_SAVEv         EQU V_SAVE+2    ;RS.L 1          ; save BASIC program jump vector
-
-V_CTLC          EQU V_SAVEv+4   ;RS.W 1          ; save CTRL-C check entry point
-V_CTLCv         EQU V_CTLC+2    ;RS.L 1          ; save CTRL-C check jump vector
-
-Itemp           EQU V_CTLCv+4   ;RS.L 1          ; temporary integer     (for GOTO etc)
-
-Smeml           EQU Itemp+4     ;RS.L 1          ; start of memory               (start of program)
-
-;; the program is stored as a series of lines each line having the following format
-;*
-;*              ds.l    1                       ; pointer to the next line or $00000000 if [EOT]
-;*              ds.l    1                       ; line number
-;*              ds.b    n                       ; program bytes
-;*              dc.b    $00                     ; [EOL] marker, there will be a second $00 byte, if
-;*                                              ; needed, to pad the line to an even number of bytes
-
-Sfncl           EQU Smeml+4     ;RS.L 1          ; start of functions    (end of Program)
-
-;; the functions are stored as function name, function execute pointer and function
-;; variable name
-;*
-;*              ds.l    1                       ; name
-;*              ds.l    1                       ; execute pointer
-;*              ds.l    1                       ; function variable
-
-Svarl           EQU Sfncl+4     ;RS.L 1          ; start of variables    (end of functions)
-
-;; the variables are stored as variable name, variable value
-;*
-;*              ds.l    1                       ; name
-;*              ds.l    1                       ; packed float or integer value
-
-Sstrl           EQU Svarl+4     ;RS.L 1          ; start of strings      (end of variables)
-
-;; the strings are stored as string name, string pointer and string length
-;*
-;*              ds.l    1                       ; name
-;*              ds.l    1                       ; string pointer
-;*              ds.w    1                       ; string length
-
-Sarryl          EQU Sstrl+4     ;RS.L 1          ; start of arrays               (end of strings)
-
-;; the arrays are stored as array name, array size, array dimensions count, array
-;; dimensions upper bounds and array elements
-;*
-;*              ds.l    1                       ; name
-;*              ds.l    1                       ; size including this header
-;*              ds.w    1                       ; dimensions count
-;*              ds.w    1                       ; 1st dimension upper bound
-;*              ds.w    1                       ; 2nd dimension upper bound
-;*              ...                             ; ...
-;*              ds.w    1                       ; nth dimension upper bound
-;*
-;; then (i1+1)*(i2+1)...*(in+1) of either ..
-;*
-;*              ds.l    1                       ; packed float or integer value
-;*
-;; .. if float or integer, or ..
-;*
-;*              ds.l    1                       ; string pointer
-;*              ds.w    1                       ; string length
-;*
-;; .. if string
-
-Earryl          EQU Sarryl+4    ;RS.L 1          ; end of arrays         (start of free mem)
-Sstorl          EQU Earryl+4    ;RS.L 1          ; string storage                (moving down)
-Ememl           EQU Sstorl+4    ;RS.L 1          ; end of memory         (upper bound of RAM)
-Sutill          EQU Ememl+4     ;RS.L 1          ; string utility ptr
-Clinel          EQU Sutill+4    ;RS.L 1          ; current line          (Basic line number)
-Blinel          EQU Clinel+4    ;RS.L 1          ; break line            (Basic line number)
-
-Cpntrl          EQU Blinel+4    ;RS.L 1          ; continue pointer
-Dlinel          EQU Cpntrl+4    ;RS.L 1          ; current DATA line
-Dptrl           EQU Dlinel+4    ;RS.L 1          ; DATA pointer
-Rdptrl          EQU Dptrl+4     ;RS.L 1          ; read pointer
-Varname         EQU Rdptrl+4    ;RS.L 1          ; current var name
-Cvaral          EQU Varname+4   ;RS.L 1          ; current var address
-Lvarpl          EQU Cvaral+4    ;RS.L 1          ; variable pointer for LET and FOR/NEXT
-
-des_sk_e        EQU Lvarpl+4    ;RS.L 6          ; descriptor stack end address
-des_sk          EQU des_sk_e+4*6 ;RS.W 1          ; descriptor stack start address
-; use a4 for the descriptor pointer
-Ibuffs          EQU des_sk+2    ;RS.L $40
-;               rept $40
-;               dc.l    0
-;               endr
-; ds.l $40                     ; start of input buffer
-Ibuffe          EQU Ibuffs+40*4 ;^^RSCOUNT
-; end of input buffer
-
-FAC1_m          EQU Ibuffe      ; RS.L 1          ; FAC1 mantissa1
-FAC1_e          EQU FAC1_m+4    ; RS.W 1          ; FAC1 exponent
-FAC1_s          EQU FAC1_e+2    ; FAC1 sign (b7)
-;EQU RS.W 1
-
-FAC2_m          EQU FAC1_s+2    ;RS.L 1          ; FAC2 mantissa1
-FAC2_e          EQU FAC2_m+4    ; RS.L 1          ; FAC2 exponent
-FAC2_s          EQU FAC2_e+1    ; FAC2 sign (b7)
-FAC_sc          EQU FAC2_e+2    ; FAC sign comparison, Acc#1 vs #2
-flag            EQU FAC2_e+3    ; flag byte for divide routine
-
-PRNlword        EQU FAC2_e+4    ;RS.L 1          ; PRNG seed long word
-
-ut1_pl          EQU PRNlword+4  ;RS.L 1          ; utility pointer 1
-
-Asptl           EQU ut1_pl+4    ;RS.L 1          ; array size/pointer
-Astrtl          EQU Asptl+4     ;RS.L 1          ; array start pointer
-
-numexp          EQU Astrtl      ; string to float number exponent count
-expcnt          EQU Astrtl+1    ; string to float exponent count
-
-expneg          EQU Astrtl+3    ; string to float eval exponent -ve flag
-
-func_l          EQU Astrtl+4    ;RS.L 1          ; function pointer
-
-
-;                                              ; these two need to be a word aligned pair !
-Defdim          EQU func_l+4    ;RS.W 1          ; default DIM flag
-cosout          EQU Defdim      ; flag which CORDIC output (re-use byte)
-Dtypef          EQU Defdim+1    ; data type flag, $80=string, $40=integer, $00=float
-
-
-Binss           EQU Defdim+4    ;RS.L 4          ; number to bin string start (32 chrs)
-
-Decss           EQU Binss+4     ;RS.L 1          ; number to decimal string start (16 chrs)
-; RS.W 1          ;*
-Usdss           EQU Decss+6     ; RS.W 1          ; unsigned decimal string start (10 chrs)
-
-Hexss           EQU Usdss+2     ; RS.L 2          ; number to hex string start (8 chrs)
-
-BHsend          EQU Hexss+4*2   ; RS.W 1          ; bin/decimal/hex string end
-
-
-prstk           EQU BHsend+2    ;RS.B 1          ; stacked function index
-
-tpower          EQU prstk+1     ;RS.B 1          ; remember CORDIC power
-
-Asrch           EQU tpower+1    ;RS.B 1          ; scan-between-quotes flag, alt search character
-
-Dimcnt          EQU Asrch+1     ;RS.B 1          ; # of dimensions
-
-Breakf          EQU Dimcnt+1    ;RS.B 1          ; break flag, $00=END else=break
-Oquote          EQU Breakf+1    ;RS.B 1          ; open quote flag (Flag: DATA; LIST; memory)
-Gclctd          EQU Oquote+1    ;RS.B 1          ; garbage collected flag
-Sufnxf          EQU Gclctd+1    ;RS.B 1          ; subscript/FNX flag, 1xxx xxx = FN(0xxx xxx)
-Imode           EQU Sufnxf+1    ;RS.B 1          ; input mode flag, $00=INPUT, $98=READ
-
-Cflag           EQU Imode+1     ; RS.B 1          ; comparison evaluation flag
-
-TabSiz          EQU Cflag+1     ; RS.B 1          ; TAB step size
-
-comp_f          EQU TabSiz+1    ; RS.B 1          ; compare function flag, bits 0,1 and 2 used
-;                            ; bit 2 set if >
-;                            ; bit 1 set if =
-;                            ; bit 0 set if <
-
-Nullct          EQU comp_f+1    ; RS.B 1          ; nulls output after each line
-TPos            EQU Nullct+1    ; RS.B 1          ; BASIC terminal position byte
-TWidth          EQU TPos+1      ;  RS.B 1          ; BASIC terminal width byte
-Iclim           EQU TWidth+1    ; RS.B 1          ; input column limit
-ccflag          EQU Iclim+1     ; RS.B 1          ; CTRL-C check flag
-ccbyte          EQU ccflag+1    ; RS.B 1          ; CTRL-C last received byte
-ccnull          EQU ccbyte+1    ; RS.B 1          ; CTRL-C last received byte 'life' timer
-
-;; these variables for simulator load/save routines
-
-file_byte       EQU ccnull+1    ; RS.B 1          ; load/save data byte
-file_id         EQU file_byte+1 ; RS.L 1          ; load/save file ID
-
-;RS.W 1          ; dummy even value and zero pad byte
-
-prg_strt        EQU file_id+6   ; ^^RSCOUNT
-
-;ORG   ;*
+                OPT D+
 
 ;                pea     cls(PC)
 ;                move.w  #9,-(SP)
@@ -265,7 +59,7 @@ novar           EQU 0           ; non existant variables cause errors
 ; Ver 3.42 reimplements backspace so that characters are overwritten with [SPACE]
 ; Ver 3.41 removes undocumented features of the USING$() function
 ; Ver 3.40 adds the USING$() function
-; Ver 3.33 adds the file r.EQUester to LOAD and SAVE
+; Ver 3.33 adds the file requester to LOAD and SAVE
 ; Ver 3.32 adds the optional ELSE clause to IF .. THEN
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -405,8 +199,8 @@ RETCHR:
 ; LOAD routine for the Easy68k simulator
 
 VEC_LD:
-                lea     load_title(PC),A1 ; set the LOAD r.EQUest title string pointer
-                bsr     get_filename    ; get the filename from the line or the r.EQUest
+                lea     load_title(PC),A1 ; set the LOAD request title string pointer
+                bsr     get_filename    ; get the filename from the line or the request
 
                 beq     LAB_FCER        ; if null do function call error then warm start
 
@@ -462,15 +256,15 @@ LOAD_eof:
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
-; get the filename from the line or from the filename r.EQUester
+; get the filename from the line or from the filename requester
 *
-; if the name is null, "", or there is nothing following then the r.EQUester is used
-; to get a filename else the filename is got from the line. if the r.EQUester is used
+; if the name is null, "", or there is nothing following then the requester is used
+; to get a filename else the filename is got from the line. if the requester is used
 ; the name buffer is allocated in string space and is always null terminated before
-; it is passed to the file r.EQUester
+; it is passed to the file requester
 
 get_filename:
-                beq.s   get_name        ; if no following go use the r.EQUester
+                beq.s   get_name        ; if no following go use the requester
 
 get_file:
                 move.l  A1,-(SP)        ; save the title string pointer
@@ -482,7 +276,7 @@ get_file:
 
                 movea.l FAC1_m(A3),A2   ; get the descriptor pointer
                 move.w  4(A2),D1        ; get the string length
-                beq.s   get_name        ; if null go use the file r.EQUester
+                beq.s   get_name        ; if null go use the file requester
 
                 movea.l (A2),A1         ; get the string pointer
                 move.w  D1,D0           ; copy the string length
@@ -501,11 +295,11 @@ name_copy:
                 bra     LAB_22B6        ; pop string off descriptor stack or from memory
 ; returns with d0 = length, a0 = pointer
 
-; get a name with the file r.EQUester
+; get a name with the file requester
 
 get_name:
                 move.l  A3,-(SP)        ; save the variables base pointer
-                move.w  #$0100,D1       ; enough space for the r.EQUest filename
+                move.w  #$0100,D1       ; enough space for the request filename
                 bsr     LAB_2115        ; make space d1 bytes long
                 movea.l A0,A3           ; copy the file name buffer pointer
                 lea     file_list(PC),A2 ; set the file types list pointer
@@ -536,14 +330,14 @@ file_list:
 ; SAVE routine for the Easy68k simulator
 
 VEC_SV:
-                lea     save_title(PC),A1 ; set the SAVE r.EQUest title string pointer
+                lea     save_title(PC),A1 ; set the SAVE request title string pointer
                 pea     SAVE_RTN(PC)    ; set the return point
-                beq.s   get_name        ; if no following go use the file r.EQUester
+                beq.s   get_name        ; if no following go use the file requester
 
                 cmp.b   #',',D0         ; compare the following byte with ","
                 bne     get_file        ; if not "," get the filename from the line
 
-                beq.s   get_name        ; else go use the file r.EQUester
+                beq.s   get_name        ; else go use the file requester
 
 SAVE_RTN:
                 beq     LAB_FCER        ; if null do function call error then warm start
@@ -1024,7 +818,7 @@ LAB_1295:
 ; crunch from (a5), output to (a0)
 ; returns .. d2 is length,
 ; d1 trashed, d0 trashed, a1 trashed
-                move.l  Itemp(A3),D1    ; get r.EQUired line #
+                move.l  Itemp(A3),D1    ; get required line #
                 bsr     LAB_SSLN        ; search BASIC for d1 line number
 ; returns pointer in a0
                 bcs.s   LAB_12E6        ; branch if not found
@@ -1384,7 +1178,7 @@ LAB_142C:
 
 LAB_SSLN:
                 movea.l Smeml(A3),A0    ; get start of program mem
-                bra.s   LAB_SCLN        ; go search for r.EQUired line from a0
+                bra.s   LAB_SCLN        ; go search for required line from a0
 
 LAB_145F:
                 movea.l D0,A0           ; copy next line pointer
@@ -1397,8 +1191,8 @@ LAB_SCLN:
                 move.l  (A0)+,D0        ; get next line pointer and point to line #
                 beq.s   LAB_145E        ; is end marker so we're done, do 'no line' exit
 
-                cmp.l   (A0),D1         ; compare this line # with r.EQUired line #
-                bgt.s   LAB_145F        ; loop if r.EQUired # > this #
+                cmp.l   (A0),D1         ; compare this line # with required line #
+                bgt.s   LAB_145F        ; loop if required # > this #
 
                 subq.w  #4,A0           ; adjust pointer, flags not changed
                 rts
@@ -1747,7 +1541,7 @@ LAB_RESTORE:
                 beq.s   LAB_1624        ; branch if next character null (RESTORE)
 
                 bsr     LAB_GFPN        ; get fixed-point number into temp integer & d1
-                cmp.l   Clinel(A3),D1   ; compare current line # with r.EQUired line #
+                cmp.l   Clinel(A3),D1   ; compare current line # with required line #
                 bls.s   LAB_GSCH        ; branch if >= (start search from beginning)
 
                 movea.l A5,A0           ; copy BASIC execute pointer
@@ -2866,7 +2660,7 @@ LAB_EVNM:
 ; check if source is numeric, else do type mismatch
 
 LAB_CTNM:
-                cmp.w   D0,D0           ; r.EQUired type is numeric so clear carry
+                cmp.w   D0,D0           ; required type is numeric so clear carry
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -2878,13 +2672,13 @@ LAB_CKTM:
                 bne.s   LAB_1ABA        ; branch if data type is string
 
 ; else data type was numeric
-                bcs     LAB_TMER        ; if r.EQUired type is string do type mismatch
+                bcs     LAB_TMER        ; if required type is string do type mismatch
 ; error
 
                 rts
-; data type was string, now check r.EQUired type
+; data type was string, now check required type
 LAB_1ABA:
-                bcc     LAB_TMER        ; if r.EQUired type is numeric do type mismatch
+                bcc     LAB_TMER        ; if required type is numeric do type mismatch
 ; error
                 rts
 
@@ -4538,7 +4332,6 @@ LAB_21D1:
                 movem.l (SP)+,D0-D2/A0-A2 ; restore registers
                 rts
 
-
 ; test and set if this is the highest string
 
 LAB_2206:
@@ -4753,7 +4546,7 @@ LAB_2317:
 ; get here with ...
 ;   a0 - points to descriptor
 ;   d0 - is offset from string start
-;   d1 - is r.EQUired string length
+;   d1 - is required string length
 
 LAB_231C:
                 movea.l A0,A1           ; save string descriptor pointer
@@ -4805,7 +4598,7 @@ LAB_2358:
 
                 move.l  D7,D1           ; get length back
                 add.w   D0,D7           ; d7 now = MID$() end
-                bcs.s   LAB_2368        ; already too long so do RIGHT$ .EQUivalent
+                bcs.s   LAB_2368        ; already too long so do RIGHT$ equivalent
 
                 cmp.w   4(A0),D7        ; compare string length with start index+length
                 bcs.s   LAB_231C        ; if end in string go do string
@@ -5362,7 +5155,7 @@ LAB_2468:
                 move.l  D1,(A0)         ; save it back
                 move.l  (SP)+,D1        ; restore d1
 
-; exponents are .EQUal now do mantissa add or
+; exponents are equal now do mantissa add or
 ; subtract
 LAB_24A8:
                 tst.b   FAC_sc(A3)      ; test sign compare (FAC1 EOR FAC2)
@@ -5683,7 +5476,7 @@ LAB_DIVIDE:
                 move.l  FAC1_m(A3),D3   ; get FAC1 mantissa
                 move.l  FAC2_m(A3),D4   ; get FAC2 mantissa
                 cmp.l   D3,D4           ; compare FAC2 with FAC1 mantissa
-                beq.s   LAB_MAN1        ; set mantissa result = 1 if .EQUal
+                beq.s   LAB_MAN1        ; set mantissa result = 1 if equal
 
                 bcs.s   AC1gtAC2        ; branch if FAC1 > FAC2
 
@@ -6048,7 +5841,7 @@ LAB_27FA:
 
                 move.l  FAC2_m(A3),D1   ; get FAC2 mantissa
                 cmp.l   FAC1_m(A3),D1   ; compare mantissas
-                beq.s   LAB_282F        ; exit if mantissas .EQUal
+                beq.s   LAB_282F        ; exit if mantissas equal
 
 ; gets here if number <> FAC1
 
@@ -6431,7 +6224,7 @@ LAB_27F0:
 
                 move.l  FAC2_m(A3),D1   ; get FAC2 mantissa
                 cmp.l   FAC1_m(A3),D1   ; compare mantissas
-                beq.s   LAB_27F3        ; exit if mantissas .EQUal
+                beq.s   LAB_27F3        ; exit if mantissas equal
 
 LAB_27F1:
                 bcs.s   LAB_27F2        ; if FAC1 > FAC2 return d0=+1,C=0
@@ -6710,8 +6503,8 @@ LAB_EXAD:
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
-; RND(n), 32 bit Galois version. make n=0 for 19th next number in s.EQUence or n<>0
-; to get 19th next number in s.EQUence after seed n. This version of the PRNG uses
+; RND(n), 32 bit Galois version. make n=0 for 19th next number in sequence or n<>0
+; to get 19th next number in sequence after seed n. This version of the PRNG uses
 ; the Galois method and a sample of 65536 bytes produced gives the following values.
 
 ; Entropy = 7.997442 bits per byte
@@ -7476,7 +7269,7 @@ LAB_D00A:
                 moveq   #0,D2           ; else reset the format string index
 LAB_D00E:
                 cmp.w   D2,D6           ; compare the index with this index
-                bne.s   LAB_D00A        ; if not .EQUal go do the next character
+                bne.s   LAB_D00A        ; if not equal go do the next character
 
                 rts
 
@@ -7941,7 +7734,7 @@ LAB_TWOPI:
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
-; get ASCII string .EQUivalent into FAC1 as integer32 or float
+; get ASCII string equivalent into FAC1 as integer32 or float
 
 ; entry is with a5 pointing to the first character of the string
 ; exit with a5 pointing to the first character after the string
@@ -8922,7 +8715,6 @@ TAB_CHRT:
                 DC.W TAB_ASCU-TAB_STAR ; "U"   $55
                 DC.W TAB_ASCV-TAB_STAR ; "V"   $56
                 DC.W TAB_ASCW-TAB_STAR ; "W"   $57
-
                 DC.W -1         ; "X" $58 no keywords
                 DC.W -1         ; "Y" $59 no keywords
                 DC.W -1         ; "Z" $5A no keywords
@@ -9482,19 +9274,220 @@ LAB_SMSG:
                 DC.B ' Bytes free',$0D,$0A,$0A
                 DC.B 'Enhanced 68k BASIC Version 3.52',$0D,$0A,$00
 
+;       OFFSET  0                       ; start of RAM
+                RSRESET
+
+ram_strt:       RS.L 256
+;                               rept $100
+;                               dc.l 0
+;                               endr
+;ds.l   $100                    ; allow 1K for the stack, this should be plenty
+; for any BASIC program that doesn't do something
+; silly, it could even be much less.
+ram_base        EQU ^^RSCOUNT
+LAB_WARM:       RS.W 1          ; BASIC warm start entry point
+Wrmjpv:         RS.L 1          ; BASIC warm start jump vector
+
+Usrjmp:         RS.W 1          ; USR function JMP address
+Usrjpv:         RS.L 1          ; USR function JMP vector
+
+;; system dependant i/o vectors
+;; these are in RAM and are set at start-up
+
+V_INPT:         RS.W 1          ; non halting scan input device entry point
+V_INPTv:        RS.L 1          ; non halting scan input device jump vector
+
+V_OUTP:         RS.W 1          ; send byte to output device entry point
+V_OUTPv:        RS.L 1          ; send byte to output device jump vector
+
+V_LOAD:         RS.W 1          ; load BASIC program entry point
+V_LOADv:        RS.L 1          ; load BASIC program jump vector
+
+V_SAVE:         RS.W 1          ; save BASIC program entry point
+V_SAVEv:        RS.L 1          ; save BASIC program jump vector
+
+V_CTLC:         RS.W 1          ; save CTRL-C check entry point
+V_CTLCv:        RS.L 1          ; save CTRL-C check jump vector
+
+Itemp:          RS.L 1          ; temporary integer     (for GOTO etc)
+
+Smeml:          RS.L 1          ; start of memory               (start of program)
+
+;; the program is stored as a series of lines each line having the following format
+;*
+;*              ds.l    1                       ; pointer to the next line or $00000000 if [EOT]
+;*              ds.l    1                       ; line number
+;*              ds.b    n                       ; program bytes
+;*              dc.b    $00                     ; [EOL] marker, there will be a second $00 byte, if
+;*                                              ; needed, to pad the line to an even number of bytes
+
+Sfncl:          RS.L 1          ; start of functions    (end of Program)
+
+;; the functions are stored as function name, function execute pointer and function
+;; variable name
+;*
+;*              ds.l    1                       ; name
+;*              ds.l    1                       ; execute pointer
+;*              ds.l    1                       ; function variable
+
+Svarl:          RS.L 1          ; start of variables    (end of functions)
+
+;; the variables are stored as variable name, variable value
+;*
+;*              ds.l    1                       ; name
+;*              ds.l    1                       ; packed float or integer value
+
+Sstrl:          RS.L 1          ; start of strings      (end of variables)
+
+;; the strings are stored as string name, string pointer and string length
+;*
+;*              ds.l    1                       ; name
+;*              ds.l    1                       ; string pointer
+;*              ds.w    1                       ; string length
+
+Sarryl:         RS.L 1          ; start of arrays               (end of strings)
+
+;; the arrays are stored as array name, array size, array dimensions count, array
+;; dimensions upper bounds and array elements
+;*
+;*              ds.l    1                       ; name
+;*              ds.l    1                       ; size including this header
+;*              ds.w    1                       ; dimensions count
+;*              ds.w    1                       ; 1st dimension upper bound
+;*              ds.w    1                       ; 2nd dimension upper bound
+;*              ...                             ; ...
+;*              ds.w    1                       ; nth dimension upper bound
+;*
+;; then (i1+1)*(i2+1)...*(in+1) of either ..
+;*
+;*              ds.l    1                       ; packed float or integer value
+;*
+;; .. if float or integer, or ..
+;*
+;*              ds.l    1                       ; string pointer
+;*              ds.w    1                       ; string length
+;*
+;; .. if string
+
+Earryl:         RS.L 1          ; end of arrays         (start of free mem)
+Sstorl:         RS.L 1          ; string storage                (moving down)
+Ememl:          RS.L 1          ; end of memory         (upper bound of RAM)
+Sutill:         RS.L 1          ; string utility ptr
+Clinel:         RS.L 1          ; current line          (Basic line number)
+Blinel:         RS.L 1          ; break line            (Basic line number)
+
+Cpntrl:         RS.L 1          ; continue pointer
+Dlinel:         RS.L 1          ; current DATA line
+Dptrl:          RS.L 1          ; DATA pointer
+Rdptrl:         RS.L 1          ; read pointer
+Varname:        RS.L 1          ; current var name
+Cvaral:         RS.L 1          ; current var address
+Lvarpl:         RS.L 1          ; variable pointer for LET and FOR/NEXT
+
+des_sk_e:       RS.L 6          ; descriptor stack end address
+des_sk:         RS.W 1          ; descriptor stack start address
+; use a4 for the descriptor pointer
+Ibuffs:         RS.L $40
+;               rept $40
+;               dc.l    0
+;               endr
+; ds.l $40                     ; start of input buffer
+Ibuffe          EQU ^^RSCOUNT
+; end of input buffer
+
+FAC1_m:         RS.L 1          ; FAC1 mantissa1
+FAC1_e:         RS.W 1          ; FAC1 exponent
+FAC1_s          EQU FAC1_e+1    ; FAC1 sign (b7)
+                RS.W 1
+
+FAC2_m:         RS.L 1          ; FAC2 mantissa1
+FAC2_e:         RS.L 1          ; FAC2 exponent
+FAC2_s          EQU FAC2_e+1    ; FAC2 sign (b7)
+FAC_sc          EQU FAC2_e+2    ; FAC sign comparison, Acc#1 vs #2
+flag            EQU FAC2_e+3    ; flag byte for divide routine
+
+PRNlword:       RS.L 1          ; PRNG seed long word
+
+ut1_pl:         RS.L 1          ; utility pointer 1
+
+Asptl:          RS.L 1          ; array size/pointer
+Astrtl:         RS.L 1          ; array start pointer
+
+numexp          EQU Astrtl      ; string to float number exponent count
+expcnt          EQU Astrtl+1    ; string to float exponent count
+
+expneg          EQU Astrtl+3    ; string to float eval exponent -ve flag
+
+func_l:         RS.L 1          ; function pointer
+
+
+;                                               ; these two need to be a word aligned pair !
+Defdim:         RS.W 1          ; default DIM flag
+cosout          EQU Defdim      ; flag which CORDIC output (re-use byte)
+Dtypef          EQU Defdim+1    ; data type flag, $80=string, $40=integer, $00=float
+
+
+Binss:          RS.L 4          ; number to bin string start (32 chrs)
+
+Decss:          RS.L 1          ; number to decimal string start (16 chrs)
+                RS.W 1          ;*
+Usdss:          RS.W 1          ; unsigned decimal string start (10 chrs)
+
+Hexss:          RS.L 2          ; number to hex string start (8 chrs)
+
+BHsend:         RS.W 1          ; bin/decimal/hex string end
+
+
+prstk:          RS.B 1          ; stacked function index
+
+tpower:         RS.B 1          ; remember CORDIC power
+
+Asrch:          RS.B 1          ; scan-between-quotes flag, alt search character
+
+Dimcnt:         RS.B 1          ; # of dimensions
+
+Breakf:         RS.B 1          ; break flag, $00=END else=break
+Oquote:         RS.B 1          ; open quote flag (Flag: DATA; LIST; memory)
+Gclctd:         RS.B 1          ; garbage collected flag
+Sufnxf:         RS.B 1          ; subscript/FNX flag, 1xxx xxx = FN(0xxx xxx)
+Imode:          RS.B 1          ; input mode flag, $00=INPUT, $98=READ
+
+Cflag:          RS.B 1          ; comparison evaluation flag
+
+TabSiz:         RS.B 1          ; TAB step size
+
+comp_f:         RS.B 1          ; compare function flag, bits 0,1 and 2 used
+;                             ; bit 2 set if >
+;                             ; bit 1 set if =
+;                             ; bit 0 set if <
+
+Nullct:         RS.B 1          ; nulls output after each line
+TPos:           RS.B 1          ; BASIC terminal position byte
+TWidth:         RS.B 1          ; BASIC terminal width byte
+Iclim:          RS.B 1          ; input column limit
+ccflag:         RS.B 1          ; CTRL-C check flag
+ccbyte:         RS.B 1          ; CTRL-C last received byte
+ccnull:         RS.B 1          ; CTRL-C last received byte 'life' timer
+
+;; these variables for simulator load/save routines
+
+file_byte:      RS.B 1          ; load/save data byte
+file_id:        RS.L 1          ; load/save file ID
+
+                RS.W 1          ; dummy even value and zero pad byte
+
+prg_strt        EQU ^^RSCOUNT
+
+;ORG   ;*
 
 ram_addr        EQU $080000     ; RAM start address
 ram_size        EQU $080000     ; RAM size
 
-RAM:
-                REPT 8192
-                DC.L 0
-                ENDR
-RAM_END:
-RAM_SIZE        EQU RAM_END-RAM
-
 listing:        INCBIN 'TEST.BAS'
-				dc.w 0
                 EVEN
 
+
+RAM:            DS.L 8192
+RAM_END:
+RAM_SIZE        EQU RAM_END-RAM
                 END
