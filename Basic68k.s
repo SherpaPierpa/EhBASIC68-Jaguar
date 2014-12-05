@@ -752,9 +752,9 @@ LAB_GMEM:
                 move.l  Ememl(A3),D0    ; get end of mem
                 sub.l   Smeml(A3),D0    ; subtract start of mem
 
-                bsr     LAB_295E        ; print d0 as unsigned integer (bytes free)
-                lea     LAB_SMSG(PC),A0 ; point to start message
-                bsr     LAB_18C3        ; print null terminated string from memory
+         ;      bsr     LAB_295E        ; print d0 as unsigned integer (bytes free)
+         ;      lea     LAB_SMSG(PC),A0 ; point to start message
+         ;      bsr     LAB_18C3        ; print null terminated string from memory
 
                 lea     LAB_RSED(PC),A0 ; get pointer to value
                 bsr     LAB_UFAC        ; unpack memory (a0) into FAC1
@@ -1020,8 +1020,8 @@ LAB_1269:
 ; BASIC warm start entry point, wait for Basic command
 
 LAB_1274:
-                lea     LAB_RMSG(PC),A0 ; point to "Ready" message
-                bsr     LAB_18C3        ; go do print string
+             ;   lea     LAB_RMSG(PC),A0 ; point to "Ready" message
+             ;   bsr     LAB_18C3        ; go do print string
 
 
 ; wait for Basic command - no "Ready"
@@ -7034,6 +7034,22 @@ LAB_BITCLR:
                 bclr    D0,(A0)         ; clear bit
                 rts
 
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+*
+; perform RSETLIST  (List Index)
+
+LAB_RSETLIST:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_index
+
+				movem.l	d0-d7/a0-a6,-(a7)
+				
+				jsr		RAPTOR_setlist
+				
+				movem.l	(a7)+,d0-d7/a0-a6
+
+                rts				
+				
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -8109,7 +8125,49 @@ LAB_RGETOBJ:
 				
                 bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
 
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+;*
+; perform RHIT
 
+LAB_RHIT:
+				bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_sl
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_sh
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_tl
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_th
+
+				movem.l	d1-d7/a0-a6,-(a7)
+			
+				clr.l	raptor_result						
+				move.l	r_sl,raptor_sourcel			
+				move.l	r_sh,raptor_sourceh			
+				move.l	r_tl,raptor_targetl			
+				move.l	r_th,raptor_targeth			
+				lea		RAPTOR_GPU_COLLISION,a0				
+				jsr 	RAPTOR_call_GPU_code
+			
+				movem.l	(a7)+,d1-d7/a0-a6
+				move.l	raptor_result,d0				
+				
+                bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
+
+r_sl:			dc.l	0
+r_sh:			dc.l	0
+r_tl:			dc.l	0
+r_th:			dc.l	0
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -8496,8 +8554,9 @@ TK_BITCLR       .EQU TK_BITSET+1 ; $A7
 TK_RPRINT		.EQU TK_BITCLR+1
 TK_RSETOBJ		.EQU TK_RPRINT+1
 TK_RUPDALL		.EQU TK_RSETOBJ+1
+TK_RSETLIST		.EQU TK_RUPDALL+1
 
-TK_TAB          .EQU TK_RUPDALL+1	
+TK_TAB          .EQU TK_RSETLIST+1	
 
 TK_ELSE         .EQU TK_TAB+1    ; $A9
 TK_TO           .EQU TK_ELSE+1   ; $AA
@@ -8561,6 +8620,7 @@ TK_MIDS         .EQU TK_RIGHTS+1 ; $E3
 TK_USINGS       .EQU TK_MIDS+1   ; $E4
 TK_U235PAD1		.EQU TK_USINGS+1
 TK_RGETOBJ		.EQU TK_U235PAD1+1
+TK_RHIT			.EQU TK_RGETOBJ+1
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -8905,9 +8965,10 @@ LAB_CTBL:
                 DC.W LAB_SWAP-LAB_CTBL ; SWAP
                 DC.W LAB_BITSET-LAB_CTBL ; BITSET
                 DC.W LAB_BITCLR-LAB_CTBL ; BITCLR
-				dc.w LAB_RPRINT-LAB_CTBL ; RPRINT
-				dc.w LAB_RSETOBJ-LAB_CTBL ; RSETOBJ
-				dc.w LAB_RUPDALL-LAB_CTBL ; RUPDALL
+				dc.w LAB_RPRINT-LAB_CTBL 				; RPRINT
+				dc.w LAB_RSETOBJ-LAB_CTBL 				; RSETOBJ
+				dc.w LAB_RUPDALL-LAB_CTBL 				; RUPDALL
+				dc.w LAB_RSETLIST-LAB_CTBL 				; RSETLIST
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -8954,6 +9015,7 @@ LAB_FTPP:
                 DC.W LAB_EVEZ-LAB_FTPP ; USING$(x)     process any expression
 				dc.w LAB_PPBI-LAB_FTPP		; U235PAD1		NONE
 				dc.w LAB_PPBI-LAB_FTPP		; RGETOBJ		NONE
+				dc.w LAB_PPBI-LAB_FTPP		; RHIT			NONE
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9000,6 +9062,7 @@ LAB_FTBL:
                 DC.W LAB_USINGS-LAB_FTBL ; USING$()
 				DC.W LAB_U235PAD1-LAB_FTBL ; U235PAD1
 				dc.w LAB_RGETOBJ-LAB_FTBL  ; RGETOBJ
+				dc.w LAB_RHIT-LAB_FTBL ; RHIT
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9113,7 +9176,6 @@ TAB_CHRT:
                 DC.W -1         ; "]" $5D no keywords
                 DC.W TAB_POWR-TAB_STAR ; "^"   $5E
 
-
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
 ; Table of Basic keywords for LIST command
@@ -9208,6 +9270,8 @@ LAB_KEYT:
 				dc.w KEY_RSETOBJ-TAB_STAR ; RSETOBJ
 				dc.b 'R',5
 				dc.w KEY_RUPDALL-TAB_STAR ; RUPDALL
+				dc.b 'R',6
+				dc.w KEY_RSETLIST-TAB_STAR ; RSETLIST
 				
                 DC.B 'T',2
                 DC.W KEY_TAB-TAB_STAR ; TAB(
@@ -9338,6 +9402,8 @@ LAB_KEYT:
 				dc.w KEY_U235PAD1-TAB_STAR
 				dc.b 'R',5
 				dc.w KEY_RGETOBJ-TAB_STAR
+				dc.b 'R',1
+				dc.w KEY_RHIT-TAB_STAR
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9601,6 +9667,10 @@ KEY_RUPDALL:
 				dc.b 'UPDALL',TK_RUPDALL ; RUPDALL
 KEY_RGETOBJ:
 				dc.b 'GETOBJ',TK_RGETOBJ ; RGETOBJ
+KEY_RSETLIST:
+				dc.b 'SETLIST',TK_RSETLIST ; RSETLIST
+KEY_RHIT:
+				dc.b 'HIT',TK_RHIT ; RHIT
                 DC.B $00
 TAB_ASCS:
 KEY_SADD:
