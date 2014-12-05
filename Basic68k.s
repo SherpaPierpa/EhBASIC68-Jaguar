@@ -7034,6 +7034,49 @@ LAB_BITCLR:
                 bclr    D0,(A0)         ; clear bit
                 rts
 
+				
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+*
+; perform RSETOBJ  (Spr Index,offset,value)
+
+LAB_RSETOBJ:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_index
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_offset
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_value
+
+				move.l	a0,-(a7)
+
+				lea		RAPTOR_sprite_table,a0
+				move.l	r_index,d0
+				mulu	#sprite_tabwidth,d0
+				add.l	d0,a0
+				
+				add.l	r_offset,a0
+				move.l 	r_value,(a0)
+				
+				move.l	(a7)+,a0
+
+                rts
+				
+r_index:			dc.l	0
+r_offset:			dc.l	0
+r_value:			dc.l	0
+	
+LAB_RUPDALL:	movem.l	d0-d7/a0-a6,-(a7)
+				jsr		RAPTOR_wait_frame_UPDATE_ALL
+				movem.l	(a7)+,d0-d7/a0-a6
+				rts
+								
+				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
 ; perform R_PRINT
@@ -7047,20 +7090,24 @@ LAB_RPRINT:		bsr	LAB_EVEX
 				dbra	d0,.cpy
 				move.b	#-1,(a1)
 		
-				bsr	LAB_EVEZ
-				bsr	LAB_2831		; (WORD)
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
 				move.l	d0,r_xpos
 
-				bsr	LAB_EVEZ
-				bsr	LAB_2831
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
 				move.l	d0,r_ypos
 
-				bsr	LAB_EVEZ
-				bsr	LAB_2831
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
 				move.l	d0,r_size
-
-				bsr	LAB_EVEZ
-				bsr	LAB_2831
+				
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
 				move.l	d0,r_indx
 
 				movem.l	d0-d7/a0-a6,-(a7)
@@ -8037,6 +8084,32 @@ LAB_TWOPI:
                 move.w  #$8300,FAC1_e(A3) ; 2pi exponent and sign
                 rts
 
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+;*
+; perform RGETOBJ
+
+LAB_RGETOBJ:
+				bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_index
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_offset
+				
+				move.l	a0,-(a7)
+				lea		RAPTOR_sprite_table,a0
+				move.l	r_index,d0
+				mulu	#sprite_tabwidth,d0
+				add.l	d0,a0
+				add.l	r_offset,a0
+				move.l	(a0),d0
+				move.l	(a7)+,a0
+				
+                bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
+
+
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -8419,8 +8492,13 @@ TK_GET          .EQU TK_WIDTH+1  ; $A4
 TK_SWAP         .EQU TK_GET+1    ; $A5
 TK_BITSET       .EQU TK_SWAP+1   ; $A6
 TK_BITCLR       .EQU TK_BITSET+1 ; $A7
+
 TK_RPRINT		.EQU TK_BITCLR+1
-TK_TAB          .EQU TK_RPRINT+1	; .EQU TK_BITCLR+1 ; $A8
+TK_RSETOBJ		.EQU TK_RPRINT+1
+TK_RUPDALL		.EQU TK_RSETOBJ+1
+
+TK_TAB          .EQU TK_RUPDALL+1	
+
 TK_ELSE         .EQU TK_TAB+1    ; $A9
 TK_TO           .EQU TK_ELSE+1   ; $AA
 TK_FN           .EQU TK_TO+1     ; $AB
@@ -8482,6 +8560,7 @@ TK_RIGHTS       .EQU TK_LEFTS+1  ; $E2
 TK_MIDS         .EQU TK_RIGHTS+1 ; $E3
 TK_USINGS       .EQU TK_MIDS+1   ; $E4
 TK_U235PAD1		.EQU TK_USINGS+1
+TK_RGETOBJ		.EQU TK_U235PAD1+1
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -8827,6 +8906,8 @@ LAB_CTBL:
                 DC.W LAB_BITSET-LAB_CTBL ; BITSET
                 DC.W LAB_BITCLR-LAB_CTBL ; BITCLR
 				dc.w LAB_RPRINT-LAB_CTBL ; RPRINT
+				dc.w LAB_RSETOBJ-LAB_CTBL ; RSETOBJ
+				dc.w LAB_RUPDALL-LAB_CTBL ; RUPDALL
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -8872,7 +8953,7 @@ LAB_FTPP:
                 DC.W LAB_LRMS-LAB_FTPP ; MID$()                "
                 DC.W LAB_EVEZ-LAB_FTPP ; USING$(x)     process any expression
 				dc.w LAB_PPBI-LAB_FTPP		; U235PAD1		NONE
-
+				dc.w LAB_PPBI-LAB_FTPP		; RGETOBJ		NONE
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -8917,7 +8998,8 @@ LAB_FTBL:
                 DC.W LAB_RIGHT-LAB_FTBL ; RIGHT$()
                 DC.W LAB_MIDS-LAB_FTBL ; MID$()
                 DC.W LAB_USINGS-LAB_FTBL ; USING$()
-				DC.W LAB_U235PAD1-LAB_FTBL
+				DC.W LAB_U235PAD1-LAB_FTBL ; U235PAD1
+				dc.w LAB_RGETOBJ-LAB_FTBL  ; RGETOBJ
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9119,8 +9201,14 @@ LAB_KEYT:
                 DC.W KEY_BITSET-TAB_STAR ; BITSET
                 DC.B 'B',4
                 DC.W KEY_BITCLR-TAB_STAR ; BITCLR
+				
 				dc.b 'R',4
 				dc.w KEY_RPRINT-TAB_STAR ; RPRINT
+				dc.b 'R',5
+				dc.w KEY_RSETOBJ-TAB_STAR ; RSETOBJ
+				dc.b 'R',5
+				dc.w KEY_RUPDALL-TAB_STAR ; RUPDALL
+				
                 DC.B 'T',2
                 DC.W KEY_TAB-TAB_STAR ; TAB(
                 DC.B 'E',2
@@ -9248,6 +9336,8 @@ LAB_KEYT:
 
 				dc.b 'U',6
 				dc.w KEY_U235PAD1-TAB_STAR
+				dc.b 'R',5
+				dc.w KEY_RGETOBJ-TAB_STAR
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9504,8 +9594,13 @@ KEY_RND:
 KEY_RUN:
                 DC.B 'UN',TK_RUN ; RUN
 KEY_RPRINT:     
-				DC.B 'PRINT',TK_RPRINT ; PRINT
-
+				DC.B 'PRINT',TK_RPRINT ; RPRINT
+KEY_RSETOBJ:
+				dc.b 'SETOBJ',TK_RSETOBJ ; RSETOBJ
+KEY_RUPDALL:
+				dc.b 'UPDALL',TK_RUPDALL ; RUPDALL
+KEY_RGETOBJ:
+				dc.b 'GETOBJ',TK_RGETOBJ ; RGETOBJ
                 DC.B $00
 TAB_ASCS:
 KEY_SADD:
