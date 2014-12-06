@@ -377,6 +377,12 @@ VEC_OUT:		movem.l D0-A6,-(SP)     ; save d0, d1
 				movem.l	d0-d6/a2-a6,(a0)
 				lea		48(a0),a0
 				dbra	d7,.up
+				move.l	#((160*8)/16)-1,d7
+.clr:			clr.l	(a0)+
+				clr.l	(a0)+
+				clr.l	(a0)+
+				clr.l	(a0)+
+				dbra	d7,.clr
 
 				moveq	#0,d2
 				move.l	#192,d1
@@ -7039,6 +7045,7 @@ LAB_BITCLR:
 ; perform RSETLIST  (List Index)
 
 LAB_RSETLIST:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
 				bsr		LAB_EVIR
 				move.l	d0,r_index
 
@@ -7080,6 +7087,7 @@ LAB_RSETOBJ:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
 				move.l 	r_value,(a0)
 				
 				move.l	(a7)+,a0
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
 
                 rts
 				
@@ -7092,6 +7100,63 @@ LAB_RUPDALL:	movem.l	d0-d7/a0-a6,-(a7)
 				movem.l	(a7)+,d0-d7/a0-a6
 				rts
 								
+
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+;*
+; perform U235MOD
+
+LAB_U235MOD:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,u_mod
+				tst.l	d0
+				bpl		.setmodule
+				
+;; if here, stop module
+.stopmodule:
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+				rts
+
+.setmodule:		movem.l	d0-d7/a0-a6,-(a7)
+
+				jsr		RAPTOR_U235stopmodule
+				
+				move.l	u_mod,d0
+				lea		RAPTOR_module_list,a0
+				add.w	d0,d0
+				add.w	d0,d0
+				move.l	(a0,d0.w),a0
+				jsr		RAPTOR_U235setmodule												; U235 module Init
+				jsr		RAPTOR_U235gomodule_stereo											; and start it playing			
+				
+				movem.l	(a7)+,d0-d7/a0-a6
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+				rts
+				
+u_mod:			dc.l	0
+
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+;*
+; perform U235SND()
+
+LAB_U235SND:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,u_sfx
+
+				bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+
+				movem.l	d0-d7/a0-a6,-(a7)
+
+				move.l	d0,d1
+				move.l	u_sfx,d0
+				jsr		RAPTOR_U235playsample
+				
+				movem.l	(a7)+,d0-d7/a0-a6
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+				rts
+
+u_sfx:			dc.l	0
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -7125,6 +7190,7 @@ LAB_RPRINT:		bsr	LAB_EVEX
                 bsr     LAB_EVNM        ; evaluate expression & check is numeric
 				bsr		LAB_EVIR
 				move.l	d0,r_indx
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
 
 				movem.l	d0-d7/a0-a6,-(a7)
 
@@ -8085,12 +8151,31 @@ LAB_PI:
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
-; perform U235PAD1
+; perform U235PAD
 
-LAB_U235PAD1:
-				move.l	U235SE_pad1,d0
+LAB_U235PAD:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+				bsr		LAB_EVIR
+				
+				cmp.l	#1,d0
+				beq		.read_pad1
+				
+				cmp.l	#2,d0
+				beq		.read_pad2
+				
+.badvalue:		moveq	#0,d0
+				bra		LAB_AYFC
+				
+.read_pad1:		move.l	U235SE_pad1,d0
                 bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
 
+.read_pad2:		move.l	U235SE_pad2,d0
+                bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
+
+				
+
+
+				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
 ; perform TWOPI
@@ -8113,6 +8198,7 @@ LAB_RGETOBJ:
                 bsr     LAB_EVNM        ; evaluate expression & check is numeric
 				bsr		LAB_EVIR
 				move.l	d0,r_offset
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
 				
 				move.l	a0,-(a7)
 				lea		RAPTOR_sprite_table,a0
@@ -8120,8 +8206,9 @@ LAB_RGETOBJ:
 				mulu	#sprite_tabwidth,d0
 				add.l	d0,a0
 				add.l	r_offset,a0
-				move.l	(a0),d0
+				move.l	(a0),D0
 				move.l	(a7)+,a0
+				
 				
                 bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
 
@@ -8148,6 +8235,7 @@ LAB_RHIT:
                 bsr     LAB_EVNM        ; evaluate expression & check is numeric
 				bsr		LAB_EVIR
 				move.l	d0,r_th
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
 
 				movem.l	d1-d7/a0-a6,-(a7)
 			
@@ -8555,8 +8643,10 @@ TK_RPRINT		.EQU TK_BITCLR+1
 TK_RSETOBJ		.EQU TK_RPRINT+1
 TK_RUPDALL		.EQU TK_RSETOBJ+1
 TK_RSETLIST		.EQU TK_RUPDALL+1
+TK_U235MOD		.EQU TK_RSETLIST+1
+TK_U235SND		.EQU TK_U235MOD+1
 
-TK_TAB          .EQU TK_RSETLIST+1	
+TK_TAB          .EQU TK_U235SND+1	
 
 TK_ELSE         .EQU TK_TAB+1    ; $A9
 TK_TO           .EQU TK_ELSE+1   ; $AA
@@ -8618,8 +8708,8 @@ TK_LEFTS        .EQU TK_SADD+1   ; $E1
 TK_RIGHTS       .EQU TK_LEFTS+1  ; $E2
 TK_MIDS         .EQU TK_RIGHTS+1 ; $E3
 TK_USINGS       .EQU TK_MIDS+1   ; $E4
-TK_U235PAD1		.EQU TK_USINGS+1
-TK_RGETOBJ		.EQU TK_U235PAD1+1
+TK_U235PAD		.EQU TK_USINGS+1
+TK_RGETOBJ		.EQU TK_U235PAD+1
 TK_RHIT			.EQU TK_RGETOBJ+1
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -8969,6 +9059,8 @@ LAB_CTBL:
 				dc.w LAB_RSETOBJ-LAB_CTBL 				; RSETOBJ
 				dc.w LAB_RUPDALL-LAB_CTBL 				; RUPDALL
 				dc.w LAB_RSETLIST-LAB_CTBL 				; RSETLIST
+				dc.w LAB_U235MOD-LAB_CTBL 				; U235MOD()	
+				dc.w LAB_U235SND-LAB_CTBL				; U235SND()
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9013,10 +9105,10 @@ LAB_FTPP:
                 DC.W LAB_LRMS-LAB_FTPP ; RIGHT$()              "
                 DC.W LAB_LRMS-LAB_FTPP ; MID$()                "
                 DC.W LAB_EVEZ-LAB_FTPP ; USING$(x)     process any expression
-				dc.w LAB_PPBI-LAB_FTPP		; U235PAD1		NONE
+				dc.w LAB_PPBI-LAB_FTPP		; U235PAD		NONE
 				dc.w LAB_PPBI-LAB_FTPP		; RGETOBJ		NONE
 				dc.w LAB_PPBI-LAB_FTPP		; RHIT			NONE
-
+			
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
 ; action addresses for functions
@@ -9060,9 +9152,10 @@ LAB_FTBL:
                 DC.W LAB_RIGHT-LAB_FTBL ; RIGHT$()
                 DC.W LAB_MIDS-LAB_FTBL ; MID$()
                 DC.W LAB_USINGS-LAB_FTBL ; USING$()
-				DC.W LAB_U235PAD1-LAB_FTBL ; U235PAD1
-				dc.w LAB_RGETOBJ-LAB_FTBL  ; RGETOBJ
-				dc.w LAB_RHIT-LAB_FTBL ; RHIT
+				DC.W LAB_U235PAD-LAB_FTBL ; U235PAD()
+				dc.w LAB_RGETOBJ-LAB_FTBL  ; RGETOBJ()
+				dc.w LAB_RHIT-LAB_FTBL ; RHIT()
+
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9264,14 +9357,18 @@ LAB_KEYT:
                 DC.B 'B',4
                 DC.W KEY_BITCLR-TAB_STAR ; BITCLR
 				
-				dc.b 'R',4
-				dc.w KEY_RPRINT-TAB_STAR ; RPRINT
 				dc.b 'R',5
+				dc.w KEY_RPRINT-TAB_STAR ; RPRINT
+				dc.b 'R',6
 				dc.w KEY_RSETOBJ-TAB_STAR ; RSETOBJ
 				dc.b 'R',5
 				dc.w KEY_RUPDALL-TAB_STAR ; RUPDALL
-				dc.b 'R',6
+				dc.b 'R',7
 				dc.w KEY_RSETLIST-TAB_STAR ; RSETLIST
+				dc.b 'U',8
+				dc.w KEY_U235MOD-TAB_STAR	; U235MOD(
+				dc.b 'U',8
+				dc.w KEY_U235SND-TAB_STAR  ; U235SND(
 				
                 DC.B 'T',2
                 DC.W KEY_TAB-TAB_STAR ; TAB(
@@ -9399,10 +9496,10 @@ LAB_KEYT:
                 DC.W KEY_USINGS-TAB_STAR ; USING$(
 
 				dc.b 'U',6
-				dc.w KEY_U235PAD1-TAB_STAR
-				dc.b 'R',5
+				dc.w KEY_U235PAD-TAB_STAR ; U235PAD(
+				dc.b 'R',6
 				dc.w KEY_RGETOBJ-TAB_STAR
-				dc.b 'R',1
+				dc.b 'R',2
 				dc.w KEY_RHIT-TAB_STAR
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -9660,17 +9757,17 @@ KEY_RND:
 KEY_RUN:
                 DC.B 'UN',TK_RUN ; RUN
 KEY_RPRINT:     
-				DC.B 'PRINT',TK_RPRINT ; RPRINT
+				DC.B 'PRINT(',TK_RPRINT ; RPRINT
 KEY_RSETOBJ:
-				dc.b 'SETOBJ',TK_RSETOBJ ; RSETOBJ
+				dc.b 'SETOBJ(',TK_RSETOBJ ; RSETOBJ(
 KEY_RUPDALL:
 				dc.b 'UPDALL',TK_RUPDALL ; RUPDALL
 KEY_RGETOBJ:
-				dc.b 'GETOBJ',TK_RGETOBJ ; RGETOBJ
+				dc.b 'GETOBJ(',TK_RGETOBJ ; RGETOBJ(
 KEY_RSETLIST:
-				dc.b 'SETLIST',TK_RSETLIST ; RSETLIST
+				dc.b 'SETLIST(',TK_RSETLIST ; RSETLIST(
 KEY_RHIT:
-				dc.b 'HIT',TK_RHIT ; RHIT
+				dc.b 'HIT(',TK_RHIT ; RHIT
                 DC.B $00
 TAB_ASCS:
 KEY_SADD:
@@ -9707,7 +9804,11 @@ KEY_TWOPI:
                 DC.B 'WOPI',TK_TWOPI ; TWOPI
                 DC.B $00
 TAB_ASCU:
-KEY_U235PAD1:	dc.b '235PAD1',TK_U235PAD1
+KEY_U235PAD:	dc.b '235PAD(',TK_U235PAD
+KEY_U235MOD:	
+				dc.b '235MOD(',TK_U235MOD
+KEY_U235SND:
+				dc.b '235SND(',TK_U235SND
 KEY_UCASES:
                 DC.B 'CASE$(',TK_UCASES ; UCASE$(
 KEY_UNTIL:
