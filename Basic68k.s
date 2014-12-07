@@ -384,6 +384,12 @@ VEC_OUT:		movem.l D0-A6,-(SP)     ; save d0, d1
 				clr.l	(a0)+
 				dbra	d7,.clr
 
+				lea		scrnbuffer,a0
+				lea		40(a0),a1
+				move.l	#((10*23)/4)-1,d7
+.scrl:			move.l	(a1)+,(a0)+
+				dbra	d7,.scrl
+				
 				moveq	#0,d2
 				move.l	#192,d1
 			
@@ -397,11 +403,24 @@ VEC_OUT:		movem.l D0-A6,-(SP)     ; save d0, d1
 				moveq	#0,d3
 				jsr		RAPTOR_print
 
+				move.l	rap_c_x,d1
+				move.l	rap_c_y,d2
+				asr		#3,d1
+				asr		#3,d2
+				mulu	#40,d2
+				subq	#1,d1
+				lea		scrnbuffer,a0
+				add.w	d1,a0
+				add.w	d2,a0
+				move.b	VEC_OUT_char,(a0)
+								
 .done:			movem.l (SP)+,D0-A6     ; restore d0, d1
+
                 rts
 
 .done_update:	move.l	d1,rap_c_y
 				move.l	d2,rap_c_x
+				
 				movem.l (SP)+,D0-A6     ; restore d0, d1
                 rts
 
@@ -410,6 +429,12 @@ VEC_OUT_char:   DC.B	0,-1
 
 rap_c_x:		dc.l	0
 rap_c_y:		dc.l	0
+
+scrnbuffer:		
+				.rept 24
+				dc.b	'                    '
+				dc.b	'                    '
+				.endr
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -7060,6 +7085,26 @@ LAB_RSETLIST:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
+; perform SETCUR(x,y) 
+
+LAB_SETCUR:		bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				asl.w	#3,d0
+				move.l	d0,rap_c_x
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				asl.w	#3,d0
+				move.l	d0,rap_c_y
+
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+								
+                rts
+
+				
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+*
 ; perform RSETOBJ  (Spr Index,offset,value)
 
 LAB_RSETOBJ:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
@@ -7097,6 +7142,24 @@ r_value:			dc.l	0
 	
 LAB_RUPDALL:	movem.l	d0-d7/a0-a6,-(a7)
 				jsr		RAPTOR_wait_frame_UPDATE_ALL
+				movem.l	(a7)+,d0-d7/a0-a6
+				rts
+								
+LAB_CLS:		movem.l	d0-d7/a0-a6,-(a7)
+				jsr		RAPTOR_particle_clear
+				
+				lea		scrnbuffer,a0
+				move.l	#((40*24)/16)-1,d7
+				move.l	#'    ',d0
+.reset:			move.l	d0,(a0)+
+				move.l	d0,(a0)+
+				move.l	d0,(a0)+
+				move.l	d0,(a0)+
+				dbra	d7,.reset
+				
+				clr.l	rap_c_x
+				clr.l	rap_c_y
+				
 				movem.l	(a7)+,d0-d7/a0-a6
 				rts
 								
@@ -8212,6 +8275,42 @@ LAB_RGETOBJ:
 				
                 bra     LAB_AYFC        ; convert d0 to signed longword in FAC1 & return
 
+				
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+;*
+; perform LOCATE()
+
+LAB_LOCATE:
+				bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_lx
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,r_ly
+
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+
+			
+				move.l	r_ly,d0
+				lea		scrnbuffer,a0
+				add.l	r_lx,a0
+				mulu	#40,d0
+				add.l	d0,a0
+				move.b	(a0),lbyte
+				
+                moveq   #1,D1           ; string is single byte
+                bsr     LAB_2115        ; make string space d1 bytes long
+; return a0/Sutill = pointer, others unchanged
+                move.b  lbyte,(A0)         ; save byte in string (byte IS string!)
+
+				bra     LAB_RTST        ; push string on descriptor stack
+ 				
+r_ly:			dc.l 	0
+r_lx:			dc.l	0
+lbyte:			dc.w	0
+				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
 ; perform RHIT
@@ -8645,8 +8744,10 @@ TK_RUPDALL		.EQU TK_RSETOBJ+1
 TK_RSETLIST		.EQU TK_RUPDALL+1
 TK_U235MOD		.EQU TK_RSETLIST+1
 TK_U235SND		.EQU TK_U235MOD+1
+TK_CLS			.EQU TK_U235SND+1
+TK_SETCUR		.EQU TK_CLS+1
 
-TK_TAB          .EQU TK_U235SND+1	
+TK_TAB          .EQU TK_SETCUR+1	
 
 TK_ELSE         .EQU TK_TAB+1    ; $A9
 TK_TO           .EQU TK_ELSE+1   ; $AA
@@ -8711,6 +8812,7 @@ TK_USINGS       .EQU TK_MIDS+1   ; $E4
 TK_U235PAD		.EQU TK_USINGS+1
 TK_RGETOBJ		.EQU TK_U235PAD+1
 TK_RHIT			.EQU TK_RGETOBJ+1
+TK_LOCATE		.EQU TK_RHIT+1
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -9061,6 +9163,8 @@ LAB_CTBL:
 				dc.w LAB_RSETLIST-LAB_CTBL 				; RSETLIST
 				dc.w LAB_U235MOD-LAB_CTBL 				; U235MOD()	
 				dc.w LAB_U235SND-LAB_CTBL				; U235SND()
+				dc.w LAB_CLS-LAB_CTBL					; CLS
+				dc.w LAB_SETCUR-LAB_CTBL				; SETCUR()
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9108,6 +9212,7 @@ LAB_FTPP:
 				dc.w LAB_PPBI-LAB_FTPP		; U235PAD		NONE
 				dc.w LAB_PPBI-LAB_FTPP		; RGETOBJ		NONE
 				dc.w LAB_PPBI-LAB_FTPP		; RHIT			NONE
+				dc.w LAB_PPBI-LAB_FTPP		; LOCATE		NONE
 			
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9155,6 +9260,7 @@ LAB_FTBL:
 				DC.W LAB_U235PAD-LAB_FTBL ; U235PAD()
 				dc.w LAB_RGETOBJ-LAB_FTBL  ; RGETOBJ()
 				dc.w LAB_RHIT-LAB_FTBL ; RHIT()
+				dc.w LAB_LOCATE-LAB_FTBL ; LOCATE()
 
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
@@ -9369,6 +9475,10 @@ LAB_KEYT:
 				dc.w KEY_U235MOD-TAB_STAR	; U235MOD(
 				dc.b 'U',8
 				dc.w KEY_U235SND-TAB_STAR  ; U235SND(
+				dc.b 'C',1
+				dc.w KEY_CLS-TAB_STAR	; CLS
+				dc.b 'S',5
+				dc.w KEY_SETCUR-TAB_STAR ; SETCUR(
 				
                 DC.B 'T',2
                 DC.W KEY_TAB-TAB_STAR ; TAB(
@@ -9501,6 +9611,8 @@ LAB_KEYT:
 				dc.w KEY_RGETOBJ-TAB_STAR
 				dc.b 'R',2
 				dc.w KEY_RHIT-TAB_STAR
+				dc.b 'L',5
+				dc.w KEY_LOCATE-TAB_STAR
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9615,6 +9727,9 @@ KEY_BITTST:
                 DC.B 'ITTST(',TK_BITTST ; BITTST(
                 DC.B $00
 TAB_ASCC:
+KEY_CLS:
+				dc.b 'LS',TK_CLS	; CLS
+				
 KEY_CALL:
                 DC.B 'ALL',TK_CALL ; CALL
 KEY_CHRS:
@@ -9702,6 +9817,8 @@ KEY_LOKE:
                 DC.B 'OKE',TK_LOKE ; LOKE
 KEY_LOOP:
                 DC.B 'OOP',TK_LOOP ; LOOP
+KEY_LOCATE:
+				dc.b 'OCATE(',TK_LOCATE ; LOCATE(
                 DC.B $00
 TAB_ASCM:
 KEY_MAX:
@@ -9790,6 +9907,8 @@ KEY_STRS:
                 DC.B 'TR$(',TK_STRS ; STR$(
 KEY_SWAP:
                 DC.B 'WAP',TK_SWAP ; SWAP
+KEY_SETCUR:
+				dc.b 'ETCUR(',TK_SETCUR ; SETCUR
                 DC.B $00
 TAB_ASCT:
 KEY_TAB:
