@@ -1721,9 +1721,9 @@ LAB_15F6:
 ; interpreter inner loop (re)entry point
 
 LAB_15C2:
-                bsr.s   LAB_1629        ; do CRTL-C check vector
-                tst.b   Clinel(A3)      ; test current line #, is -ve for immediate mode
-                bmi.s   LAB_15D1        ; branch if immediate mode
+        ;        bsr.s   LAB_1629        ; do CRTL-C check vector
+        ;        tst.b   Clinel(A3)      ; test current line #, is -ve for immediate mode
+        ;        bmi.s   LAB_15D1        ; branch if immediate mode
 
                 move.l  A5,Cpntrl(A3)   ; save BASIC execute pointer as continue pointer
 LAB_15D1:
@@ -7080,8 +7080,61 @@ LAB_RSETLIST:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
 				
 				movem.l	(a7)+,d0-d7/a0-a6
 
-                rts				
+                rts	
 				
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+*
+; perform PLOT(x,y) 
+
+LAB_PLOT:		bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.w	d0,.px
+				
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.w	d0,.py
+				
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+				
+				movem.l	d0-d3/a0,-(a7)
+				move.w	.px,d0
+				move.w	.py,d1
+				move.b	pcolor,d2
+				btst	#0,d0
+				beq.s	.even
+				ror.w	#4,d2
+.even:			asr.w	d0
+				lea		RAPTOR_particle_gfx,a0
+				add.w	d0,a0
+				move.w	d1,d3
+				asl.w	#5,d3
+				asl.w	#7,d1
+				add.w	d1,a0
+				add.w	d3,a0
+				or.b	d2,(a0)
+				movem.l	(a7)+,d0-d3/a0
+				
+                rts
+				
+.px:				dc.w	0
+.py:				dc.w	0
+pcolor:				dc.b	$f0,0
+
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+*
+; perform COLOUR(x)
+
+LAB_COLOUR:		bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				rol.w	#4,d0
+				move.b	d0,pcolor
+								
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+				
+                rts
+
+
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -8746,8 +8799,10 @@ TK_U235MOD		.EQU TK_RSETLIST+1
 TK_U235SND		.EQU TK_U235MOD+1
 TK_CLS			.EQU TK_U235SND+1
 TK_SETCUR		.EQU TK_CLS+1
+TK_PLOT			.EQU TK_SETCUR+1
+TK_COLOUR		.EQU TK_PLOT+1
 
-TK_TAB          .EQU TK_SETCUR+1	
+TK_TAB          .EQU TK_COLOUR+1	
 
 TK_ELSE         .EQU TK_TAB+1    ; $A9
 TK_TO           .EQU TK_ELSE+1   ; $AA
@@ -9165,6 +9220,8 @@ LAB_CTBL:
 				dc.w LAB_U235SND-LAB_CTBL				; U235SND()
 				dc.w LAB_CLS-LAB_CTBL					; CLS
 				dc.w LAB_SETCUR-LAB_CTBL				; SETCUR()
+				dc.w LAB_PLOT-LAB_CTBL					; PLOT()
+				dc.w LAB_COLOUR-LAB_CTBL				; COLOUR()
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9479,6 +9536,10 @@ LAB_KEYT:
 				dc.w KEY_CLS-TAB_STAR	; CLS
 				dc.b 'S',5
 				dc.w KEY_SETCUR-TAB_STAR ; SETCUR(
+				dc.b 'P',3
+				dc.w KEY_PLOT-TAB_STAR ; PLOT(
+				dc.b 'C',5
+				dc.w KEY_COLOUR-TAB_STAR ; COLOUR(
 				
                 DC.B 'T',2
                 DC.W KEY_TAB-TAB_STAR ; TAB(
@@ -9740,6 +9801,8 @@ KEY_CONT:
                 DC.B 'ONT',TK_CONT ; CONT
 KEY_COS:
                 DC.B 'OS(',TK_COS ; COS(
+KEY_COLOUR:
+				dc.b 'OLOUR(',TK_COLOUR ; COLOUR(
                 DC.B $00
 TAB_ASCD:
 KEY_DATA:
@@ -9845,6 +9908,8 @@ KEY_OR:
                 DC.B 'R',TK_OR  ; OR
                 DC.B $00
 TAB_ASCP:
+KEY_PLOT:		
+				dc.b 'LOT(',TK_PLOT ; PLOT(
 KEY_PEEK:
                 DC.B 'EEK(',TK_PEEK ; PEEK(
 KEY_PI:
