@@ -1,3 +1,12 @@
+	.extern	RBASIC_START
+	.extern	listing
+	.extern RAPTOR_particle_gfx
+	.extern RAPTOR_sprite_table
+	.extern	RAPTOR_module_list
+	
+			include				"RAPTOR/INCS/RAPTOR.INC"								; Include RAPTOR library labels
+			include				"U235SE.021/U235SE.INC"									; Include U235SE library labels
+
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ;
 ;                                                                                   ;
 ;       Enhanced BASIC for the Motorola MC680xx                                     ;
@@ -1752,13 +1761,72 @@ LAB_1602:
 ; only tokens before TAB can start a statement
 
                 ext.w   D0              ; byte to word (clear high byte)
-                add.w   D0,D0           ; *2
-                lea     LAB_CTBL(PC),A0 ; get vector table base address
-                move.w  0(A0,D0.w),D0   ; get offset to vector
-                pea     0(A0,D0.w)      ; push vector
-                bra     LAB_IGBY        ; get following byte & execute vector
+				lsl.w	#2,d0
+				move.l	LAB_CTBL(PC,d0.w),-(a7)
+				bra		LAB_IGBY
 
+ ;              add.w   D0,D0           ; *2
+ ;              lea     LAB_CTBL(PC),A0 ; get vector table base address
+ ;              move.w  0(A0,D0.w),D0   ; get offset to vector
+ ;              pea     0(A0,D0.w)      ; push vector
+ ;              bra     LAB_IGBY        ; get following byte & execute vector
 
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+;*
+; command vector table
+
+LAB_CTBL:
+                dc.l LAB_END ; END
+                dc.l LAB_FOR ; FOR
+                dc.l LAB_NEXT ; NEXT
+                dc.l LAB_DATA ; DATA
+                dc.l LAB_INPUT ; INPUT
+                dc.l LAB_DIM ; DIM
+                dc.l LAB_READ ; READ
+                dc.l LAB_LET ; LET
+                dc.l LAB_DEC ; DEC
+                dc.l LAB_GOTO ; GOTO
+                dc.l LAB_RUN ; RUN
+                dc.l LAB_IF ; IF
+                dc.l LAB_RESTORE ; RESTORE
+                dc.l LAB_GOSUB ; GOSUB
+                dc.l LAB_RETURN ; RETURN
+                dc.l LAB_REM ; REM
+                dc.l LAB_STOP ; STOP
+                dc.l LAB_ON ; ON
+                dc.l LAB_NULL ; NULL
+                dc.l LAB_INC ; INC
+                dc.l LAB_WAIT ; WAIT
+                dc.l LAB_LOAD ; LOAD
+                dc.l LAB_SAVE ; SAVE
+                dc.l LAB_DEF ; DEF
+                dc.l LAB_POKE ; POKE
+                dc.l LAB_DOKE ; DOKE
+                dc.l LAB_LOKE ; LOKE
+                dc.l LAB_CALL ; CALL
+                dc.l LAB_DO ; DO
+                dc.l LAB_LOOP ; LOOP
+                dc.l LAB_PRINT ; PRINT
+                dc.l LAB_CONT ; CONT
+                dc.l LAB_LIST ; LIST
+                dc.l LAB_CLEAR ; CLEAR
+                dc.l LAB_NEW ; NEW
+                dc.l LAB_WDTH ; WIDTH
+                dc.l LAB_GET ; GET
+                dc.l LAB_SWAP ; SWAP
+                dc.l LAB_BITSET ; BITSET
+                dc.l LAB_BITCLR ; BITCLR
+				dc.l LAB_RPRINT 				; RPRINT
+				dc.l LAB_RSETOBJ 				; RSETOBJ
+				dc.l LAB_RUPDALL 				; RUPDALL
+				dc.l LAB_RSETLIST 				; RSETLIST
+				dc.l LAB_U235MOD 				; U235MOD()	
+				dc.l LAB_U235SND				; U235SND()
+				dc.l LAB_CLS					; CLS
+				dc.l LAB_SETCUR				; SETCUR()
+				dc.l LAB_PLOT					; PLOT()
+				dc.l LAB_COLOUR				; COLOUR()
+				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
 ; CTRL-C check jump. this is called as a subroutine but exits back via a jump if a
@@ -6818,7 +6886,7 @@ Ninc0:
 Ninc1:
                 dbra    D2,Ninc0        ; loop
 
-                move.l  D0,PRNlword(A3) ; save back to seed word
+                move.l  D0,PRNlword(A3) ; save back to seed word								
                 move.l  D0,FAC1_m(A3)   ; copy to FAC1 mantissa
                 move.w  #$8000,FAC1_e(A3) ; set the exponent and clear the sign
                 bra     LAB_24D5        ; normalise FAC1 & return
@@ -7176,7 +7244,8 @@ LAB_RSETOBJ:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
 
 				move.l	a0,-(a7)
 
-				lea		RAPTOR_sprite_table,a0
+				move.l	raptor_liststart,a0
+			;	lea		RAPTOR_sprite_table,a0
 				move.l	r_index,d0
 				mulu	#sprite_tabwidth,d0
 				add.l	d0,a0
@@ -8317,7 +8386,8 @@ LAB_RGETOBJ:
 				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
 				
 				move.l	a0,-(a7)
-				lea		RAPTOR_sprite_table,a0
+				move.l	raptor_liststart,a0
+			;	lea		RAPTOR_sprite_table,a0
 				move.l	r_index,d0
 				mulu	#sprite_tabwidth,d0
 				add.l	d0,a0
@@ -8745,6 +8815,11 @@ d1x10:
 RTS_025:
                 rts
 
+RBASIC_START:
+				lea		basic_ram,a0
+				move.l	#128000,d0
+				jmp		LAB_COLD
+				
 
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -9165,63 +9240,6 @@ TAB_HTHET:
                 DC.L $01>>n     ; atnh(2^-32)
 
 KFCTSEED        .EQU $9A8F4441>>n ; $26A3D110
-
-
-; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
-;*
-; command vector table
-
-LAB_CTBL:
-                DC.W LAB_END-LAB_CTBL ; END
-                DC.W LAB_FOR-LAB_CTBL ; FOR
-                DC.W LAB_NEXT-LAB_CTBL ; NEXT
-                DC.W LAB_DATA-LAB_CTBL ; DATA
-                DC.W LAB_INPUT-LAB_CTBL ; INPUT
-                DC.W LAB_DIM-LAB_CTBL ; DIM
-                DC.W LAB_READ-LAB_CTBL ; READ
-                DC.W LAB_LET-LAB_CTBL ; LET
-                DC.W LAB_DEC-LAB_CTBL ; DEC
-                DC.W LAB_GOTO-LAB_CTBL ; GOTO
-                DC.W LAB_RUN-LAB_CTBL ; RUN
-                DC.W LAB_IF-LAB_CTBL ; IF
-                DC.W LAB_RESTORE-LAB_CTBL ; RESTORE
-                DC.W LAB_GOSUB-LAB_CTBL ; GOSUB
-                DC.W LAB_RETURN-LAB_CTBL ; RETURN
-                DC.W LAB_REM-LAB_CTBL ; REM
-                DC.W LAB_STOP-LAB_CTBL ; STOP
-                DC.W LAB_ON-LAB_CTBL ; ON
-                DC.W LAB_NULL-LAB_CTBL ; NULL
-                DC.W LAB_INC-LAB_CTBL ; INC
-                DC.W LAB_WAIT-LAB_CTBL ; WAIT
-                DC.W LAB_LOAD-LAB_CTBL ; LOAD
-                DC.W LAB_SAVE-LAB_CTBL ; SAVE
-                DC.W LAB_DEF-LAB_CTBL ; DEF
-                DC.W LAB_POKE-LAB_CTBL ; POKE
-                DC.W LAB_DOKE-LAB_CTBL ; DOKE
-                DC.W LAB_LOKE-LAB_CTBL ; LOKE
-                DC.W LAB_CALL-LAB_CTBL ; CALL
-                DC.W LAB_DO-LAB_CTBL ; DO
-                DC.W LAB_LOOP-LAB_CTBL ; LOOP
-                DC.W LAB_PRINT-LAB_CTBL ; PRINT
-                DC.W LAB_CONT-LAB_CTBL ; CONT
-                DC.W LAB_LIST-LAB_CTBL ; LIST
-                DC.W LAB_CLEAR-LAB_CTBL ; CLEAR
-                DC.W LAB_NEW-LAB_CTBL ; NEW
-                DC.W LAB_WDTH-LAB_CTBL ; WIDTH
-                DC.W LAB_GET-LAB_CTBL ; GET
-                DC.W LAB_SWAP-LAB_CTBL ; SWAP
-                DC.W LAB_BITSET-LAB_CTBL ; BITSET
-                DC.W LAB_BITCLR-LAB_CTBL ; BITCLR
-				dc.w LAB_RPRINT-LAB_CTBL 				; RPRINT
-				dc.w LAB_RSETOBJ-LAB_CTBL 				; RSETOBJ
-				dc.w LAB_RUPDALL-LAB_CTBL 				; RUPDALL
-				dc.w LAB_RSETLIST-LAB_CTBL 				; RSETLIST
-				dc.w LAB_U235MOD-LAB_CTBL 				; U235MOD()	
-				dc.w LAB_U235SND-LAB_CTBL				; U235SND()
-				dc.w LAB_CLS-LAB_CTBL					; CLS
-				dc.w LAB_SETCUR-LAB_CTBL				; SETCUR()
-				dc.w LAB_PLOT-LAB_CTBL					; PLOT()
-				dc.w LAB_COLOUR-LAB_CTBL				; COLOUR()
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -10041,7 +10059,11 @@ LAB_SMSG:
                 DC.B ' Bytes free',$0D,$0A,$0A
                 DC.B 'Enhanced 68k BASIC Version 3.52',$0D,$0A,$00
 
-listing:        INCBIN 'TEST.BAS'
-				dc.b	0,0,0,0
+				.even
+basic_ram:
+				.rept	128000
+				dc.b	0
+				.endr
+
                 EVEN
 
