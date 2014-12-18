@@ -3,6 +3,8 @@
 	.extern RAPTOR_particle_gfx
 	.extern RAPTOR_sprite_table
 	.extern	RAPTOR_module_list
+	.extern	RUPDALL_FLAG
+	.extern	pixel_list
 	
 			include				"RAPTOR/INCS/RAPTOR.INC"								; Include RAPTOR library labels
 			include				"U235SE.021/U235SE.INC"									; Include U235SE library labels
@@ -1826,6 +1828,8 @@ LAB_CTBL:
 				dc.l LAB_SETCUR				; SETCUR()
 				dc.l LAB_PLOT					; PLOT()
 				dc.l LAB_COLOUR				; COLOUR()
+				dc.l LAB_RPARTI				; RPARTI()
+				dc.l LAB_RSETMAP			; RSETMAP()
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 ;*
@@ -7149,6 +7153,65 @@ LAB_RSETLIST:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
 				movem.l	(a7)+,d0-d7/a0-a6
 
                 rts	
+
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+*
+; perform RPARTI(fx,x,y) 
+
+LAB_RPARTI:		bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,.p_index
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,.p_x
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,.p_y
+
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+
+				movem.l	d0-a6,-(a7)
+				lea		pixel_list,a0
+				move.l	.p_index,d0
+				asl.w	#2,d0
+				move.l	(a0,d0.w),a0
+				move.l	a0,raptor_part_inject_addr
+				move.l	.p_x,(a0)
+				move.l	.p_y,4(a0)
+				lea		RAPTOR_particle_injection_GPU,a0
+				jsr 	RAPTOR_call_GPU_code
+				movem.l	(a7)+,d0-a6
+			
+                rts
+
+.p_index:		dc.l	0
+.p_x:			dc.l	0
+.p_y:			dc.l	0
+
+; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
+*
+; perform RSETMAP(x,y) 
+
+LAB_RSETMAP:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,raptor_map_position_x
+
+                bsr     LAB_1C01        ; scan for ",", else do syntax error/warm start
+                bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr		LAB_EVIR
+				move.l	d0,raptor_map_position_y
+
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+
+				movem.l	d0-a6,-(a7)
+				jsr		RAPTOR_map_set_position
+				movem.l	(a7)+,d0-a6
+			
+                rts
 				
 ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; ; *
 *
@@ -7262,10 +7325,38 @@ r_index:			dc.l	0
 r_offset:			dc.l	0
 r_value:			dc.l	0
 	
-LAB_RUPDALL:	movem.l	d0-d7/a0-a6,-(a7)
+LAB_RUPDALL:	bsr     LAB_EVNM        ; evaluate expression & check is numeric
+				bsr     LAB_1BFB        ; scan for ")", else do syntax error/warm start
+				bsr		LAB_EVIR		; d0 now contains parameter
+				
+				move.l	a0,-(a7)
+				
+				asl.w	#2,d0
+				move.l	.RUPDTAB(pc,d0.w),a0
+				jmp		(a0)
+.RUPDTAB:		dc.l	.rnow,.rvbl,.rnvbl
+
+.rnow:			cmp.l	#4,RUPDALL_FLAG
+				bne		.do_now
+				
+				jsr		RAPTOR_wait_frame
+				clr.l	RUPDALL_FLAG
+				bra		.rupd_exit
+
+.do_now:		movem.l	d0-d7/a0-a6,-(a7)
 				jsr		RAPTOR_wait_frame_UPDATE_ALL
 				movem.l	(a7)+,d0-d7/a0-a6
+				bra		.rupd_exit
+
+.rvbl:			move.l	#4,RUPDALL_FLAG
+				bra		.rupd_exit
+
+.rnvbl:			clr.l	RUPDALL_FLAG
+
+.rupd_exit:		move.l	(a7)+,a0
 				rts
+
+RUPDALL_FLAG:	dc.l	0
 								
 LAB_CLS:		movem.l	d0-d7/a0-a6,-(a7)
 				jsr		RAPTOR_particle_clear
@@ -8876,8 +8967,10 @@ TK_CLS			.EQU TK_U235SND+1
 TK_SETCUR		.EQU TK_CLS+1
 TK_PLOT			.EQU TK_SETCUR+1
 TK_COLOUR		.EQU TK_PLOT+1
+TK_RPARTI		.EQU TK_COLOUR+1
+TK_RSETMAP		.EQU TK_RPARTI+1
 
-TK_TAB          .EQU TK_COLOUR+1	
+TK_TAB          .EQU TK_RSETMAP+1	
 
 TK_ELSE         .EQU TK_TAB+1    ; $A9
 TK_TO           .EQU TK_ELSE+1   ; $AA
@@ -9542,8 +9635,8 @@ LAB_KEYT:
 				dc.w KEY_RPRINT-TAB_STAR ; RPRINT
 				dc.b 'R',6
 				dc.w KEY_RSETOBJ-TAB_STAR ; RSETOBJ
-				dc.b 'R',5
-				dc.w KEY_RUPDALL-TAB_STAR ; RUPDALL
+				dc.b 'R',6
+				dc.w KEY_RUPDALL-TAB_STAR ; RUPDALL(
 				dc.b 'R',7
 				dc.w KEY_RSETLIST-TAB_STAR ; RSETLIST
 				dc.b 'U',8
@@ -9558,6 +9651,10 @@ LAB_KEYT:
 				dc.w KEY_PLOT-TAB_STAR ; PLOT(
 				dc.b 'C',5
 				dc.w KEY_COLOUR-TAB_STAR ; COLOUR(
+				dc.b 'R',5
+				dc.w KEY_RPARTI-TAB_STAR ; RPARTI(
+				dc.b 'R',6
+				dc.w KEY_RSETMAP-TAB_STAR ; RSETMAP(
 				
                 DC.B 'T',2
                 DC.W KEY_TAB-TAB_STAR ; TAB(
@@ -9961,13 +10058,17 @@ KEY_RPRINT:
 KEY_RSETOBJ:
 				dc.b 'SETOBJ(',TK_RSETOBJ ; RSETOBJ(
 KEY_RUPDALL:
-				dc.b 'UPDALL',TK_RUPDALL ; RUPDALL
+				dc.b 'UPDALL(',TK_RUPDALL ; RUPDALL
 KEY_RGETOBJ:
 				dc.b 'GETOBJ(',TK_RGETOBJ ; RGETOBJ(
 KEY_RSETLIST:
 				dc.b 'SETLIST(',TK_RSETLIST ; RSETLIST(
 KEY_RHIT:
-				dc.b 'HIT(',TK_RHIT ; RHIT
+				dc.b 'HIT(',TK_RHIT ; RHIT(
+KEY_RPARTI:
+				dc.b 'PARTI(',TK_RPARTI ; RPARTI(
+KEY_RSETMAP:
+				dc.b 'SETMAP(',TK_RSETMAP ; RSETMAP(
                 DC.B $00
 TAB_ASCS:
 KEY_SADD:
